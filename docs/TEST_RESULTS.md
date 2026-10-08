@@ -77,3 +77,19 @@ metadata проверяемого run, digest и неизменный commit, о
 commit SHA четырёх Actions сверены с официальными release tags.
 Реальный OAuth, GitHub Secrets, environment reviewers и API-публикация
 остаются будущими действиями пользователя по GITHUB_ACTIONS.md.
+
+## Этап 2 — 2026-10-09
+
+`node --test tests/core.test.cjs tests/upload.test.cjs tests/actions.test.cjs`:
+**91 passed, 0 failed, 0 skipped**. Новые четыре теста проверяют независимую
+сверку ID/номера, отсутствие мутаций Sheets/Properties/триггеров/proof,
+отсутствие придуманного фильтра isDeleted, отрицательный результат при
+несовпадении ID, redaction до усечения строк и безопасные API errors.
+Ответы GraphQL в тестах искусственные; реальные ответы владельца и
+публичные страницы явно разделены в STAGE2_READINESS.md.
+
+Пять прямых страниц лотов разных способов, LotsFiltersInput, инструкции
+ЗЦП/ОК/аукциона/одного источника и Google quotas получены по HTTP 200.
+Полный справочник владельца: 37 уникальных ID, 36 code (295/300 совпадают).
+В cloud авторизованные запросы к Goszakup не выполнялись. Новый helper
+не загружен в Google. Sync, trigger и workflow publish не запускались.
