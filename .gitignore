@@ -1,0 +1,6 @@
+# Google user OAuth credentials must remain outside version control.
+.clasprc.json
+.clasprc.*.json
+client_secret*.json
+.tender-upload/
+node_modules/

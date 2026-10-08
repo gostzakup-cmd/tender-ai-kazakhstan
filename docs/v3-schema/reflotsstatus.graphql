@@ -1,0 +1,10 @@
+type RefLotsStatus {
+
+id: Int
+
+nameRu: String
+
+nameKz: String
+
+code: String
+}

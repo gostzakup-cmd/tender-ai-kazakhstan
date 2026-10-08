@@ -1,0 +1,149 @@
+type TrdBuy {
+
+#   Уникальный идентификатор
+id: Int
+
+#   Номер объявления
+numberAnno: String
+
+#   Наименование на русском языке
+nameRu: String
+
+#   Наименование на государственном языке
+nameKz: String
+
+#   Общая сумма запланированная для закупки (Сумма закупки)
+totalSum: Float
+
+#   Количество лотов в объявлении
+countLots: Int
+
+#   Код способа закупки
+refTradeMethodsId: Int
+
+#   Вид предмета закупок
+refSubjectTypeId: Int
+
+#   БИН Заказчика
+customerBin: String
+
+#   ИД Заказчика
+customerPid: Int
+
+#   Наименование заказчика на государственном языке
+customerNameKz: String
+
+#   Наименование заказчика на русском языке
+customerNameRu: String
+
+#   БИН Организатора
+orgBin: String
+
+#   ИД Организатора
+orgPid: Int
+
+#   Наименование организатора на государственном языке
+orgNameKz: String
+
+#   Наименование организатора на русском языке
+orgNameRu: String
+
+#   Статуса объявления
+refBuyStatusId: Int
+
+#   Дата начала приема заявок
+startDate: String
+
+#   Срок начала повторного предоставления (дополнения) заявок
+repeatStartDate: String
+
+#   Срок окончания повторного предоставления (дополнения) заявок
+repeatEndDate: String
+
+#   Дата окончания приема заявок
+endDate: String
+
+#   Дата и время публикации
+publishDate: String
+
+#   Дата публикации итогов
+itogiDatePublic: String
+
+#   Тип закупки (первая, повторная)
+refTypeTradeId: Int
+
+#   Признак - Закупка среди организаций инвалидов
+disablePersonId: Int
+
+#   Срок начала обсуждения
+discusStartDate: String
+
+#   Срок окончания обсуждения
+discusEndDate: String
+
+#   ID поставщика из одного источника
+idSupplier: Int
+
+#   БИН/ИИН поставщика из одного источника
+biinSupplier: String
+
+#   ИД исходного объявления
+parentId: Int
+
+#   Закупки Единого организатора КГЗ МФ РК
+singlOrgSign: Int
+
+#   Закупка легкой и мебельной промышленности
+isLightIndustry: Int
+
+#   Закупка с признаком СМР
+isConstructionWork: Int
+
+#   Тип специальной закупки
+refSpecPurchaseTypeId: Int
+
+#   Дата последнего изменения
+lastUpdateDate: String
+
+#   Финансовый год
+finYear: [Int]
+
+#   Место поставки (КАТО)
+kato: [String]
+
+#   ИД системы
+systemId: Int
+
+#   Дата индексации
+indexDate: String
+
+#   Лоты
+Lots: [Lots]
+
+#   Организатор
+Organizer: Subject
+
+#   Конкурсная комиссия
+Commission: [TrdBuyComm]
+
+#   Информация об отмене закупки
+Cancel: [TrdBuyCancel]
+
+#   Информация о приостановлении закупки
+Pause: TrdBuyPause
+
+#   Документ закупки (документы лотов перенесены в объект Lots)
+Files: [FileTrdBuy]
+
+#   Способ закупки
+RefTradeMethods: RefTradeMethods
+
+#   Вид предмета закупки
+RefSubjectType: RefSubjectType
+
+#   Статус объявления
+RefBuyStatus: RefBuyStatus
+
+#   Тип закупки (первая, повторная)
+RefTypeTrade: RefTypeTrade
+}

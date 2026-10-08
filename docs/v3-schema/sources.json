@@ -1,0 +1,50 @@
+{
+  "checkedOn": "2026-10-08",
+  "sources": [
+    {
+      "name": "query",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/query.doc.html",
+      "htmlSha256": "da7e26c229dba7b4a8f390c5fe5f623187938bb90c84b9b6177a9fc0540af7ee"
+    },
+    {
+      "name": "lots",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/lots.doc.html",
+      "htmlSha256": "308dfa8d5358f7e95b2e8f578ab2877db80b8181aaaf928b2e72722b3ae2e05f"
+    },
+    {
+      "name": "trdbuy",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/trdbuy.doc.html",
+      "htmlSha256": "c1332e9ddd0dbded0add40957726eee13176c3de0752da7ddfa1c377aa6a85c6"
+    },
+    {
+      "name": "plnpoint",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/plnpoint.doc.html",
+      "htmlSha256": "843fcd3fd7319c17d3bcff649c7e8f06332295ec293305fb4e3d074758ba364a"
+    },
+    {
+      "name": "reflotsstatus",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/reflotsstatus.doc.html",
+      "htmlSha256": "0d2cd1484e40ec124df7f272200d6fba40c5bb43bb1cb27becc7541c26cc0c8d"
+    },
+    {
+      "name": "refsubjecttype",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/refsubjecttype.doc.html",
+      "htmlSha256": "70d3952d6cb4e87bc64f9faf564e71d8d0743b28b19e111d136cc68f89b56ec5"
+    },
+    {
+      "name": "lotsfiltersinput",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/lotsfiltersinput.doc.html",
+      "htmlSha256": "f00a27abfe7a8aca927b70410834ac0b8e0e09e408de1e1aada1e2a0d6ea1f22"
+    },
+    {
+      "name": "trdbuyfiltersinput",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/trdbuyfiltersinput.doc.html",
+      "htmlSha256": "c81f67e32e9d5788b5b19661b40abb0742a1ed124336a0f92e6522c004050b04"
+    },
+    {
+      "name": "developer/ows_v3",
+      "url": "https://old.goszakup.gov.kz/ru/developer/ows_v3",
+      "htmlSha256": "71d47f5a73e29c94e9337bc3f7c2ae9ec464072df38e599c0b41956e3bdb3e30"
+    }
+  ]
+}

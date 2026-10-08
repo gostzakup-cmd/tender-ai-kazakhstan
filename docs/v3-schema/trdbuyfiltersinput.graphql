@@ -1,0 +1,58 @@
+input TrdBuyFiltersInput {
+
+id: [Int]
+
+#   Поиск по наименованию объявления на государственном языке
+nameKz: String
+
+#   Поиск по наименованию объявления на русском языке
+nameRu: String
+
+#   Поиск по номеру объявления
+numberAnno: String
+
+#   Поиск по способу закупки
+refTradeMethodsId: [Int]
+
+#   Поиск по виду предмета закупки
+refSubjectTypeId: Int
+
+#   Поиск по сумме закупки
+totalSum: [Float]
+
+#   Поиск по БИН организатора
+orgBin: String
+
+#   Поиск по ИД организатора
+orgPid: [Int]
+
+#   Поиск по наименованию организатора на государственном языке
+orgNameKz: String
+
+#   Поиск по наименованию организатора на русском языке
+orgNameRu: String
+
+#   Поиск по статусу
+refBuyStatusId: [Int]
+
+#   Поиск по дате публикации
+publishDate: [String]
+
+#   Поиск по дате последнего изменения
+lastUpdateDate: [String]
+
+#   Поиск по признакам
+refTrdBuySigns: Int
+
+#   Поиск по месту поставки
+kato: [String]
+
+#   Поиск по месту поставки с возможностью поиска по части кода
+strKato: String
+
+#   Поиск по финансовому году
+finYear: Int
+
+#   Поиск по признаку специального порядка (1 - закупка по спец порядку)
+refSpecPurchaseTypeId: Int
+}

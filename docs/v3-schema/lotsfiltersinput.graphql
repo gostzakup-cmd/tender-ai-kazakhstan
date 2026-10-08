@@ -1,0 +1,73 @@
+input LotsFiltersInput {
+id: [Int]
+
+#   Поиск по наименованию на русском языке
+nameRu: String
+
+#   Поиск по наименованию на государственном языке
+nameKz: String
+
+#   Поиск по наименованию и описанию на государственном языке (с учетом морфологии)
+nameDescriptionKz: String
+
+#   Поиск по наименованию и описанию на русском языке (с учетом морфологии)
+nameDescriptionRu: String
+
+#   Поиск по наименованию заказчика на государственном языке (с учетом морфологии)
+customerNameKz: String
+
+#   Поиск по наименованию заказчика на русском языке (с учетом морфологии)
+customerNameRu: String
+
+#   Поиск по сумме лота
+amount: [Float]
+
+#   Поиск по ИД объявдения
+trdBuyId: [Int]
+
+#   Поиск по номеру лота
+lotNumber: String
+
+#   Поиск по статусу лота
+refLotStatusId: [Int]
+
+#   Поиск по пункту плана
+pointList: [Int]
+
+#   Поиск по ИД справочника ЕНС ТРУ
+enstruList: [Int]
+
+#   Поиск по местам поставки
+plnPointKatoList: String
+
+#   Поиск по родительскому пункту плана
+plnPointRootrecordId: Int
+
+#   Поиск по ИД заказчика
+customerId: Int
+
+#   Поиск по БИН заказчика
+customerBin: String
+
+#   Поиск по номеру объявления
+trdBuyNumberAnno: String
+
+#   Поиск по признакам
+refTrdBuySigns: Int
+
+#   Поиск по признаку объединенного лота
+unionLots: Int
+
+#   Поиск по плановому способу закупки
+refTradeMethodsId: [Int]
+
+#   Поиск по фактическому способу закупки
+refBuyTradeMethodsId: [Int]
+
+#   Поиск по дате изменения
+lastUpdateDate: [String]
+
+#   Поиск по дате индексации
+indexDate: [String]
+
+}

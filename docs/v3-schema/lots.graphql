@@ -1,0 +1,119 @@
+type Lots {
+
+#   Идентификатор
+id: Int
+
+#   Номер лота
+lotNumber: String
+
+#   Статус лота
+refLotStatusId: Int
+
+#   Дата последнего изменения
+lastUpdateDate: String
+
+#   Признак объединенного лота
+unionLots: Int
+
+#   Общее количество
+count: Float
+
+#   Общая сумма
+amount: Float
+
+#   Наименование на русском языке
+nameRu: String
+
+#   Наименование на государственном языке
+nameKz: String
+
+#   Детальное описание на русском языке
+descriptionRu: String
+
+#   Детальное описание на государственном языке
+descriptionKz: String
+
+#   Идентификатор заказчика
+customerId: Int
+
+#   БИН заказчика
+customerBin: String
+
+#   Наименование заказчика на русском языке
+customerNameRu: String
+
+#   Наименование заказчика на государственном языке
+customerNameKz: String
+
+#   Номер объявления
+trdBuyNumberAnno: String
+
+#   Уникальный идентификатор объявления
+trdBuyId: Int
+
+#   Признак демпинга
+dumping: Int
+
+#   Код планового способа закупки
+refTradeMethodsId: Int
+
+#   Код фактического способа закупки
+refBuyTradeMethodsId: Int
+
+#   Признак работы. 1-работа с ТЭО/ПСД, 2-работа на разработку ТЭО/ПСД
+psdSign: Int
+
+#   Признак Консультационная услуга
+consultingServices: Int
+
+#   Список пунктов плана
+pointList: [Int]
+
+#   Список ИД ЕНС ТРУ
+enstruList: [Int]
+
+#   Список мест поставки
+plnPointKatoList: [String]
+
+#   Закупки Единого организатора КГЗ МФ РК
+singlOrgSign: Int
+
+#   Закупка легкой и мебельной промышленности
+isLightIndustry: Int
+
+#   Закупка с признаком СМР
+isConstructionWork: Int
+
+#   Признак - Закупка среди организаций инвалидов
+disablePersonId: Int
+
+#   Объект удален
+isDeleted: Int
+
+#   Уникальный идентификатор системы
+systemId: Int
+
+#   Дата индексации
+indexDate: String
+
+#   Справочник статусов
+RefLotsStatus: RefLotsStatus
+
+#   Пункт плана
+Plans: [PlnPoint]
+
+#   Заказчик
+Customer: Subject
+
+#   Объявление
+TrdBuy: TrdBuy
+
+#   Плановый способ закупки
+RefTradeMethods: RefTradeMethods
+
+#   Фактический способ закупки
+RefBuyTradeMethods: RefTradeMethods
+
+#   Документ лота
+Files: [FileLots]
+}

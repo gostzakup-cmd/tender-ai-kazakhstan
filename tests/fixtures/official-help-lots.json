@@ -1,0 +1,24 @@
+{
+  "total": 546884,
+  "limit": 50,
+  "next_page": "/lots?page=next&search_after=836127",
+  "items": [
+    {
+      "id": 836826,
+      "system_id": 3,
+      "lot_number": "4497906-АУК1",
+      "ref_lot_status_id": 230,
+      "pln_point_id": 4497906,
+      "pln_point_rootrecord_id": 4497906,
+      "customer_id": 3861,
+      "customer_bin": "050140006873",
+      "trd_buy_number_anno": "415500-1",
+      "trd_buy_id": 415500,
+      "dumping": 0,
+      "dumping_lot_price": 0,
+      "psd_sign": 0,
+      "consulting_services": 0,
+      "index_date": "2018-01-08 08:01:18"
+    }
+  ]
+}
