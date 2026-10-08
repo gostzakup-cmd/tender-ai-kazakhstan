@@ -1,0 +1,643 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tender-ai.invalid/spec/contracts/v1",
+  "$comment": "Internal proposed records, not Goszakup field names. Structural validation cannot establish truth, source validity, full-page equality or numeric arithmetic; real adapters/gates remain unimplemented. Decimal strings preserve quoted/confirmed values; unknown confirmedAmount is null. No runtime integration is provided.",
+  "oneOf": [
+    {"$ref":"#/definitions/Evidence"},
+    {"$ref":"#/definitions/MoneyEvidence"},
+    {"$ref":"#/definitions/LotSnapshot"},
+    {"$ref":"#/definitions/DocumentVersion"},
+    {"$ref":"#/definitions/Requirement"},
+    {"$ref":"#/definitions/Offer"},
+    {"$ref":"#/definitions/Match"},
+    {"$ref":"#/definitions/FxSnapshot"},
+    {"$ref":"#/definitions/Expense"},
+    {"$ref":"#/definitions/Assessment"},
+    {"$ref":"#/definitions/UserSheets"},
+    {"$ref":"#/definitions/Calculation"}
+  ],
+  "definitions": {
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"EVIDENCE"},
+        "evidenceId": {"type":"string","minLength":1},
+        "lotsId": {"anyOf":[{"type":"string","pattern":"^[1-9][0-9]*$"},{"type":"null"}]},
+        "sourceType": {"enum":["GOSZAKUP","ORIGINAL_TS","MANUFACTURER","SUPPLIER","OFFICIAL_FX","LEGAL_RULE","REGISTRY","OWNER_FACT"]},
+        "sourceUrl": {"anyOf":[{"type":"string","pattern":"^https://[^\\s]+$"},{"type":"null"}]},
+        "sourceHash": {"anyOf":[{"type":"string","pattern":"^[a-f0-9]{64}$"},{"type":"null"}]},
+        "checkedAt": {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"},
+        "expiresAt": {"anyOf":[{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"},{"type":"null"}]},
+        "status": {"enum":["CONFIRMED","UNCONFIRMED","STALE","REJECTED","NOT_APPLICABLE"]},
+        "quote": {"anyOf":[{"type":"string"},{"type":"null"}]},
+        "page": {"anyOf":[{"type":"integer","minimum":1},{"type":"null"}]},
+        "offsetUtf16": {"anyOf":[{"type":"array","items":{"type":"integer","minimum":0},"minItems":2,"maxItems":2},{"type":"null"}]},
+        "documentHash": {"anyOf":[{"type":"string","pattern":"^[a-f0-9]{64}$"},{"type":"null"}]},
+        "reason": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]}
+      },
+      "required": ["kind","evidenceId","lotsId","sourceType","sourceUrl","sourceHash","checkedAt","expiresAt","status","quote","page","offsetUtf16","documentHash","reason"],
+      "allOf": [
+        {
+          "if": {"properties":{"status":{"enum":["CONFIRMED","NOT_APPLICABLE"]}},"required":["status"]},
+          "then": {"properties":{"sourceUrl":{"type":"string","pattern":"^https://[^\\s]+$"},"sourceHash":{"type":"string","pattern":"^[a-f0-9]{64}$"}}}
+        }
+      ]
+    },
+    "MoneyEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"MONEY_EVIDENCE"},
+        "currency": {"type":"string","pattern":"^[A-Z]{3}$"},
+        "quotedAmount": {"anyOf":[{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},{"type":"null"}]},
+        "confirmedAmount": {"anyOf":[{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},{"type":"null"}]},
+        "status": {"enum":["CONFIRMED","UNCONFIRMED","STALE","REJECTED","NOT_APPLICABLE"]},
+        "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true},
+        "checkedAt": {"anyOf":[{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"},{"type":"null"}]}
+      },
+      "required": ["kind","currency","quotedAmount","confirmedAmount","status","evidenceIds","checkedAt"],
+      "allOf": [
+        {
+          "if": {"properties":{"status":{"const":"CONFIRMED"}},"required":["status"]},
+          "then": {
+            "properties": {
+              "confirmedAmount": {"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},
+              "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true,"minItems":1},
+              "checkedAt": {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"}
+            }
+          }
+        },
+        {"if":{"properties":{"status":{"enum":["UNCONFIRMED","STALE","REJECTED"]}},"required":["status"]},"then":{"properties":{"confirmedAmount":{"type":"null"}}}},
+        {
+          "if": {"properties":{"status":{"const":"NOT_APPLICABLE"}},"required":["status"]},
+          "then": {"properties":{"confirmedAmount":{"const":"0"},"evidenceIds":{"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true,"minItems":1}}}
+        }
+      ]
+    },
+    "LotSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"LOT_SNAPSHOT"},
+        "lotsId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "lotNumber": {"type":"string","minLength":1},
+        "trdBuyId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "procurementNumber": {"type":"string","minLength":1},
+        "lotBudgetKzt": {"type":"number","minimum":0},
+        "quantity": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+        "unit": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "plannedMethodId": {"anyOf":[{"type":"integer","minimum":1},{"type":"null"}]},
+        "actualMethodId": {"anyOf":[{"type":"integer","minimum":1},{"type":"null"}]},
+        "goodsStatus": {"enum":["CONFIRMED_GOODS","UNKNOWN","NON_GOODS"]},
+        "targetEligible": {"type":"boolean"},
+        "statusCode": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "publishedRaw": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "publishedInstant": {"anyOf":[{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"},{"type":"null"}]},
+        "sourceTimezone": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "observedAt": {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"},
+        "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true},
+        "sourceHash": {"type":"string","pattern":"^[a-f0-9]{64}$"}
+      },
+      "required": [
+        "kind",
+        "lotsId",
+        "lotNumber",
+        "trdBuyId",
+        "procurementNumber",
+        "lotBudgetKzt",
+        "quantity",
+        "unit",
+        "plannedMethodId",
+        "actualMethodId",
+        "goodsStatus",
+        "targetEligible",
+        "statusCode",
+        "publishedRaw",
+        "publishedInstant",
+        "sourceTimezone",
+        "observedAt",
+        "evidenceIds",
+        "sourceHash"
+      ],
+      "allOf": [
+        {
+          "if": {"properties":{"targetEligible":{"const":true}},"required":["targetEligible"]},
+          "then": {
+            "properties": {
+              "goodsStatus": {"const":"CONFIRMED_GOODS"},
+              "lotBudgetKzt": {"type":"number","minimum":0,"maximum":10000000},
+              "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true,"minItems":1}
+            }
+          }
+        }
+      ]
+    },
+    "DocumentVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"DOCUMENT_VERSION"},
+        "documentId": {"type":"string","minLength":1},
+        "lotsId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "lotNumber": {"type":"string","minLength":1},
+        "trdBuyId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "documentScope": {"enum":["LOTS_FILES","TRDBUY_FILES"]},
+        "originalName": {"type":"string","minLength":1},
+        "driveFileId": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "byteSha256": {"anyOf":[{"type":"string","pattern":"^[a-f0-9]{64}$"},{"type":"null"}]},
+        "documentSetHash": {"anyOf":[{"type":"string","pattern":"^[a-f0-9]{64}$"},{"type":"null"}]},
+        "bindingStatus": {"enum":["CONFIRMED","UNCONFIRMED","REJECTED"]},
+        "currentVersionStatus": {"enum":["CONFIRMED","UNCONFIRMED","STALE"]},
+        "bindingEvidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true},
+        "completeRead": {"type":"boolean"},
+        "pageCount": {"anyOf":[{"type":"integer","minimum":1},{"type":"null"}]},
+        "pagesRead": {"type":"array","items":{"type":"integer","minimum":1},"uniqueItems":true},
+        "supersedes": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "observedAt": {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"}
+      },
+      "required": [
+        "kind",
+        "documentId",
+        "lotsId",
+        "lotNumber",
+        "trdBuyId",
+        "documentScope",
+        "originalName",
+        "driveFileId",
+        "byteSha256",
+        "documentSetHash",
+        "bindingStatus",
+        "currentVersionStatus",
+        "bindingEvidenceIds",
+        "completeRead",
+        "pageCount",
+        "pagesRead",
+        "supersedes",
+        "observedAt"
+      ],
+      "allOf": [
+        {
+          "if": {"properties":{"bindingStatus":{"const":"CONFIRMED"}},"required":["bindingStatus"]},
+          "then": {"properties":{"bindingEvidenceIds":{"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true,"minItems":1}}}
+        },
+        {
+          "if": {"properties":{"completeRead":{"const":true}},"required":["completeRead"]},
+          "then": {
+            "properties": {
+              "driveFileId": {"type":"string","minLength":1},
+              "byteSha256": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+              "documentSetHash": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+              "pageCount": {"type":"integer","minimum":1},
+              "pagesRead": {"type":"array","items":{"type":"integer","minimum":1},"minItems":1,"uniqueItems":true}
+            }
+          }
+        }
+      ]
+    },
+    "Requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"REQUIREMENT"},
+        "requirementId": {"type":"string","minLength":1},
+        "lotsId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "documentSetHash": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+        "name": {"type":"string","minLength":1},
+        "rawValue": {"anyOf":[{"type":"string"},{"type":"null"}]},
+        "unit": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "operator": {"enum":["EXACT","MIN","MAX","RANGE","REQUIRED","UNKNOWN"]},
+        "critical": {"type":"boolean"},
+        "criticalityEvidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true},
+        "equivalentAllowed": {"enum":["YES","NO","UNKNOWN"]},
+        "status": {"enum":["CONFIRMED","UNCONFIRMED","CONFLICTING"]},
+        "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true}
+      },
+      "required": ["kind","requirementId","lotsId","documentSetHash","name","rawValue","unit","operator","critical","criticalityEvidenceIds","equivalentAllowed","status","evidenceIds"],
+      "allOf": [
+        {
+          "if": {"properties":{"status":{"const":"CONFIRMED"}},"required":["status"]},
+          "then": {"properties":{"evidenceIds":{"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true,"minItems":1}}}
+        }
+      ]
+    },
+    "Offer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"OFFER"},
+        "offerId": {"type":"string","minLength":1},
+        "lotsId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "supplierId": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "supplierName": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "independenceGroupId": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "independenceStatus": {"enum":["CONFIRMED","UNCONFIRMED"]},
+        "productUrl": {"type":"string","pattern":"^https://[^\\s]+$"},
+        "brand": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "model": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "partNumber": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "variant": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "condition": {"enum":["NEW","USED","REFURBISHED","UNKNOWN"]},
+        "price": {"$ref":"#/definitions/MoneyEvidence"},
+        "stockStatus": {"enum":["CONFIRMED","UNCONFIRMED","OUT_OF_STOCK"]},
+        "stockQuantity": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+        "packSize": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+        "warranty": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]},
+        "deliveryStatus": {"enum":["CONFIRMED","UNCONFIRMED","IMPOSSIBLE"]},
+        "checkedAt": {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"},
+        "expiresAt": {"anyOf":[{"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"},{"type":"null"}]},
+        "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true}
+      },
+      "required": [
+        "kind",
+        "offerId",
+        "lotsId",
+        "supplierId",
+        "supplierName",
+        "independenceGroupId",
+        "independenceStatus",
+        "productUrl",
+        "brand",
+        "model",
+        "partNumber",
+        "variant",
+        "condition",
+        "price",
+        "stockStatus",
+        "stockQuantity",
+        "packSize",
+        "warranty",
+        "deliveryStatus",
+        "checkedAt",
+        "expiresAt",
+        "evidenceIds"
+      ]
+    },
+    "Match": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"REQUIREMENT_MATCH"},
+        "lotsId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "requirementId": {"type":"string","minLength":1},
+        "offerId": {"type":"string","minLength":1},
+        "result": {"enum":["MATCH","MISMATCH","UNCONFIRMED"]},
+        "critical": {"type":"boolean"},
+        "productValue": {"anyOf":[{"type":"string"},{"type":"null"}]},
+        "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true},
+        "reason": {"type":"string","minLength":1}
+      },
+      "required": ["kind","lotsId","requirementId","offerId","result","critical","productValue","evidenceIds","reason"],
+      "allOf": [
+        {
+          "if": {"properties":{"result":{"enum":["MATCH","MISMATCH"]}},"required":["result"]},
+          "then": {"properties":{"evidenceIds":{"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true,"minItems":1}}}
+        }
+      ]
+    },
+    "FxSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"FX_SNAPSHOT"},
+        "fxId": {"type":"string","minLength":1},
+        "from": {"type":"string","pattern":"^[A-Z]{3}$"},
+        "to": {"const":"KZT"},
+        "nominal": {"anyOf":[{"type":"number","exclusiveMinimum":0},{"type":"null"}]},
+        "quotedRate": {"anyOf":[{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},{"type":"null"}]},
+        "confirmedRate": {"anyOf":[{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},{"type":"null"}]},
+        "effectiveDate": {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}$"},
+        "status": {"enum":["CONFIRMED","UNCONFIRMED","STALE"]},
+        "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true}
+      },
+      "required": ["kind","fxId","from","to","nominal","quotedRate","confirmedRate","effectiveDate","status","evidenceIds"],
+      "allOf": [
+        {
+          "if": {"properties":{"status":{"const":"CONFIRMED"}},"required":["status"]},
+          "then": {
+            "properties": {
+              "nominal": {"type":"number","exclusiveMinimum":0},
+              "confirmedRate": {"type":"string","pattern":"^(?!0(?:\\.0{1,6})?$)(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},
+              "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true,"minItems":1}
+            }
+          }
+        },
+        {"if":{"properties":{"status":{"enum":["UNCONFIRMED","STALE"]}},"required":["status"]},"then":{"properties":{"confirmedRate":{"type":"null"}}}}
+      ]
+    },
+    "Expense": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"EXPENSE"},
+        "expenseId": {"type":"string","minLength":1},
+        "lotsId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "type": {"enum":["DOMESTIC_DELIVERY","INTERNATIONAL_DELIVERY","CUSTOMS","VAT","CERTIFICATION","COMMISSION","WARRANTY","PACKAGING","BANK","OTHER"]},
+        "amount": {"$ref":"#/definitions/MoneyEvidence"},
+        "applicability": {"enum":["APPLICABLE","NOT_APPLICABLE","UNKNOWN"]},
+        "reason": {"type":"string","minLength":1},
+        "taxProfileVersion": {"anyOf":[{"type":"string","minLength":1},{"type":"null"}]}
+      },
+      "required": ["kind","expenseId","lotsId","type","amount","applicability","reason","taxProfileVersion"]
+    },
+    "Assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"ASSESSMENT"},
+        "lotsId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "documentSetHash": {"anyOf":[{"type":"string","pattern":"^[a-f0-9]{64}$"},{"type":"null"}]},
+        "comparisonPercent": {"anyOf":[{"type":"number","minimum":0,"maximum":100},{"type":"null"}]},
+        "confidence": {"enum":["HIGH","MED","LOW"]},
+        "decision": {"enum":["GO","REVIEW","NO-GO"]},
+        "reasonCodes": {"type":"array","items":{"type":"string","minLength":1},"minItems":1,"uniqueItems":true},
+        "priceBasis": {"enum":["TWO_INDEPENDENT_CONFIRMED","OFFICIAL_CONFIRMED","SINGLE_OTHER_CONFIRMED","UNCONFIRMED"]},
+        "potentialFullCostProfitKzt": {"anyOf":[{"type":"number"},{"type":"null"}]},
+        "potentialFullCostMarginPercent": {"anyOf":[{"type":"number","maximum":100},{"type":"null"}]},
+        "calculationMode": {"enum":["BASE_BUDGET","FULL_COST_BUDGET","BID_REVENUE","UNAVAILABLE"]},
+        "guards": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "liveStatusVerified": {"type":"boolean"},
+            "applicationWindowVerified": {"type":"boolean"},
+            "participationVerified": {"type":"boolean"},
+            "latestDocumentVerified": {"type":"boolean"},
+            "lotDocumentBindingVerified": {"type":"boolean"},
+            "fullTsReadVerified": {"type":"boolean"},
+            "criticalRequirementsMatched": {"type":"boolean"},
+            "allMandatoryRequirementsMatched": {"type":"boolean"},
+            "modelPartNumberVerifiedWhenRequired": {"type":"boolean"},
+            "priceFreshVerified": {"type":"boolean"},
+            "priceConfigVerified": {"type":"boolean"},
+            "fullQuantityInStockVerified": {"type":"boolean"},
+            "linksVerified": {"type":"boolean"},
+            "deliveryVerified": {"type":"boolean"},
+            "fxVerifiedWhenApplicable": {"type":"boolean"},
+            "taxBasisVerified": {"type":"boolean"},
+            "allMaterialExpensesVerified": {"type":"boolean"},
+            "nationalRegimeVerified": {"type":"boolean"},
+            "supplierIdentityVerified": {"type":"boolean"}
+          },
+          "required": [
+            "liveStatusVerified",
+            "applicationWindowVerified",
+            "participationVerified",
+            "latestDocumentVerified",
+            "lotDocumentBindingVerified",
+            "fullTsReadVerified",
+            "criticalRequirementsMatched",
+            "allMandatoryRequirementsMatched",
+            "modelPartNumberVerifiedWhenRequired",
+            "priceFreshVerified",
+            "priceConfigVerified",
+            "fullQuantityInStockVerified",
+            "linksVerified",
+            "deliveryVerified",
+            "fxVerifiedWhenApplicable",
+            "taxBasisVerified",
+            "allMaterialExpensesVerified",
+            "nationalRegimeVerified",
+            "supplierIdentityVerified"
+          ]
+        },
+        "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true},
+        "checkedAt": {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"},
+        "availabilityEvidence": {"enum":["CONFIRMED_FULL_QUANTITY","CONFIRMED_AVAILABILITY_ONLY","UNKNOWN","OUT_OF_STOCK"]}
+      },
+      "required": [
+        "kind",
+        "lotsId",
+        "documentSetHash",
+        "comparisonPercent",
+        "confidence",
+        "decision",
+        "reasonCodes",
+        "priceBasis",
+        "potentialFullCostProfitKzt",
+        "potentialFullCostMarginPercent",
+        "calculationMode",
+        "guards",
+        "evidenceIds",
+        "checkedAt",
+        "availabilityEvidence"
+      ],
+      "allOf": [
+        {
+          "if": {"properties":{"confidence":{"const":"HIGH"}},"required":["confidence"]},
+          "then": {
+            "properties": {
+              "comparisonPercent": {"type":"number","minimum":90,"maximum":100},
+              "priceBasis": {"enum":["TWO_INDEPENDENT_CONFIRMED","OFFICIAL_CONFIRMED"]},
+              "documentSetHash": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+              "evidenceIds": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true,"minItems":1},
+              "guards": {
+                "properties": {
+                  "latestDocumentVerified": {"const":true},
+                  "lotDocumentBindingVerified": {"const":true},
+                  "fullTsReadVerified": {"const":true},
+                  "criticalRequirementsMatched": {"const":true},
+                  "modelPartNumberVerifiedWhenRequired": {"const":true},
+                  "priceFreshVerified": {"const":true},
+                  "priceConfigVerified": {"const":true},
+                  "fullQuantityInStockVerified": {"const":true},
+                  "linksVerified": {"const":true},
+                  "allMaterialExpensesVerified": {"const":true}
+                },
+                "type": "object"
+              },
+              "availabilityEvidence": {"const":"CONFIRMED_FULL_QUANTITY"}
+            }
+          }
+        },
+        {
+          "if": {"properties":{"confidence":{"const":"MED"}},"required":["confidence"]},
+          "then": {
+            "properties": {
+              "comparisonPercent": {"type":"number","minimum":90,"maximum":100},
+              "documentSetHash": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+              "priceBasis": {"enum":["TWO_INDEPENDENT_CONFIRMED","OFFICIAL_CONFIRMED","SINGLE_OTHER_CONFIRMED"]},
+              "guards": {
+                "properties": {
+                  "lotDocumentBindingVerified": {"const":true},
+                  "fullTsReadVerified": {"const":true},
+                  "criticalRequirementsMatched": {"const":true},
+                  "modelPartNumberVerifiedWhenRequired": {"const":true},
+                  "priceFreshVerified": {"const":true},
+                  "priceConfigVerified": {"const":true}
+                },
+                "type": "object"
+              },
+              "availabilityEvidence": {"enum":["CONFIRMED_FULL_QUANTITY","CONFIRMED_AVAILABILITY_ONLY"]}
+            }
+          }
+        },
+        {
+          "if": {"properties":{"decision":{"const":"GO"}},"required":["decision"]},
+          "then": {
+            "properties": {
+              "confidence": {"const":"HIGH"},
+              "comparisonPercent": {"const":100},
+              "calculationMode": {"enum":["FULL_COST_BUDGET","BID_REVENUE"]},
+              "potentialFullCostProfitKzt": {"type":"number","exclusiveMinimum":0},
+              "potentialFullCostMarginPercent": {"type":"number","exclusiveMinimum":0,"maximum":100},
+              "guards": {
+                "properties": {
+                  "liveStatusVerified": {"const":true},
+                  "applicationWindowVerified": {"const":true},
+                  "participationVerified": {"const":true},
+                  "latestDocumentVerified": {"const":true},
+                  "lotDocumentBindingVerified": {"const":true},
+                  "fullTsReadVerified": {"const":true},
+                  "criticalRequirementsMatched": {"const":true},
+                  "allMandatoryRequirementsMatched": {"const":true},
+                  "modelPartNumberVerifiedWhenRequired": {"const":true},
+                  "priceFreshVerified": {"const":true},
+                  "priceConfigVerified": {"const":true},
+                  "fullQuantityInStockVerified": {"const":true},
+                  "linksVerified": {"const":true},
+                  "deliveryVerified": {"const":true},
+                  "fxVerifiedWhenApplicable": {"const":true},
+                  "taxBasisVerified": {"const":true},
+                  "allMaterialExpensesVerified": {"const":true},
+                  "nationalRegimeVerified": {"const":true},
+                  "supplierIdentityVerified": {"const":true}
+                },
+                "type": "object"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "UserSheets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"USER_SHEETS_LAYOUT"},
+        "mainName": {"const":"Полный список лотов"},
+        "mainHeaders": {
+          "const": [
+            "№",
+            "Тендер №",
+            "Лот №",
+            "Наименование",
+            "Характеристика",
+            "Цена за ед., ₸",
+            "Кол-во",
+            "Ед. изм.",
+            "Сумма лота, ₸",
+            "Найденный товар",
+            "Цена товара за ед., ₸",
+            "Стоимость товара, ₸",
+            "Прибыль, ₸",
+            "Прибыль, %",
+            "Соответствие ТС, %",
+            "Уверенность",
+            "Поставщик",
+            "Ссылка на лот",
+            "Ссылка на источник"
+          ]
+        },
+        "topName": {"const":"Топ по прибыльности"},
+        "topHeaders": {
+          "const": [
+            "№",
+            "Тендер №",
+            "Лот №",
+            "Наименование",
+            "Сумма лота, ₸",
+            "Найденный товар",
+            "Цена товара за ед., ₸",
+            "Стоимость товара, ₸",
+            "Прибыль, ₸",
+            "Прибыль, %",
+            "Соответствие ТС, %",
+            "Уверенность",
+            "Поставщик",
+            "Ссылка на лот",
+            "Ссылка на источник"
+          ]
+        },
+        "title": {"const":"Анализ прибыльности тендеров goszakup.gov.kz"}
+      },
+      "required": ["kind","mainName","mainHeaders","topName","topHeaders","title"]
+    },
+    "Calculation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"const":"CALCULATION"},
+        "calculationId": {"type":"string","minLength":1},
+        "lotsId": {"type":"string","pattern":"^[1-9][0-9]*$"},
+        "scenario": {"enum":["BASE_BUDGET","FULL_COST_BUDGET","BID_REVENUE","UNAVAILABLE"]},
+        "revenueBasis": {"enum":["LOT_BUDGET_UPPER_BOUND","BID_QUOTE","CONFIRMED_CONTRACT","UNKNOWN"]},
+        "budgetKzt": {"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},
+        "revenueKzt": {"anyOf":[{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},{"type":"null"}]},
+        "goodsInputsConfirmed": {"type":"boolean"},
+        "goodsCostKzt": {"anyOf":[{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},{"type":"null"}]},
+        "fullCostKzt": {"anyOf":[{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},{"type":"null"}]},
+        "baseProfitKzt": {"anyOf":[{"type":"string","pattern":"^-?(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},{"type":"null"}]},
+        "baseMarginPercent": {"anyOf":[{"type":"number","maximum":100},{"type":"null"}]},
+        "fullCostProfitKzt": {"anyOf":[{"type":"string","pattern":"^-?(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},{"type":"null"}]},
+        "fullCostMarginPercent": {"anyOf":[{"type":"number","maximum":100},{"type":"null"}]},
+        "unknownInputs": {"type":"array","items":{"type":"string","minLength":1},"uniqueItems":true},
+        "inputRecordIds": {"type":"array","items":{"type":"string","minLength":1},"minItems":1,"uniqueItems":true},
+        "checkedAt": {"type":"string","pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?(Z|[+-]\\d{2}:\\d{2})$"}
+      },
+      "required": [
+        "kind",
+        "calculationId",
+        "lotsId",
+        "scenario",
+        "revenueBasis",
+        "budgetKzt",
+        "revenueKzt",
+        "goodsInputsConfirmed",
+        "goodsCostKzt",
+        "fullCostKzt",
+        "baseProfitKzt",
+        "baseMarginPercent",
+        "fullCostProfitKzt",
+        "fullCostMarginPercent",
+        "unknownInputs",
+        "inputRecordIds",
+        "checkedAt"
+      ],
+      "allOf": [
+        {
+          "if": {"properties":{"scenario":{"enum":["BASE_BUDGET","FULL_COST_BUDGET"]}},"required":["scenario"]},
+          "then": {
+            "properties": {"revenueBasis":{"const":"LOT_BUDGET_UPPER_BOUND"},"goodsInputsConfirmed":{"const":true},"goodsCostKzt":{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"}}
+          }
+        },
+        {
+          "if": {"properties":{"scenario":{"const":"FULL_COST_BUDGET"}},"required":["scenario"]},
+          "then": {"properties":{"fullCostKzt":{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"},"unknownInputs":{"maxItems":0,"type":"array"}}}
+        },
+        {
+          "if": {"properties":{"goodsInputsConfirmed":{"const":false}},"required":["goodsInputsConfirmed"]},
+          "then": {
+            "properties": {
+              "scenario": {"const":"UNAVAILABLE"},
+              "goodsCostKzt": {"type":"null"},
+              "fullCostKzt": {"type":"null"},
+              "baseProfitKzt": {"type":"null"},
+              "baseMarginPercent": {"type":"null"},
+              "fullCostProfitKzt": {"type":"null"},
+              "fullCostMarginPercent": {"type":"null"}
+            }
+          }
+        },
+        {
+          "if": {"properties":{"unknownInputs":{"minItems":1,"type":"array"}},"required":["unknownInputs"]},
+          "then": {"properties":{"fullCostKzt":{"type":"null"},"fullCostProfitKzt":{"type":"null"},"fullCostMarginPercent":{"type":"null"}}}
+        },
+        {
+          "if": {"properties":{"scenario":{"const":"BID_REVENUE"}},"required":["scenario"]},
+          "then": {"properties":{"revenueBasis":{"enum":["BID_QUOTE","CONFIRMED_CONTRACT"]},"revenueKzt":{"type":"string","pattern":"^(0|[1-9][0-9]*)(\\.[0-9]{1,6})?$"}}}
+        }
+      ]
+    }
+  }
+}
