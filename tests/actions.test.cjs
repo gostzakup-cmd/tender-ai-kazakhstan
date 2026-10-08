@@ -114,13 +114,27 @@ test('preparation encrypts source snapshots and never writes to the remote proje
   assert.ok(bundle.backup.some(file => file.content.includes('PRIVATE_SERVER_SOURCE_TEST_ONLY')));
   assert.ok(!bundle.backup.concat(bundle.stage).some(file => /clasprc/.test(file.name)));
 });
-test('duplicate globals and implicit legacy scopes produce a blocked review plan', t => {
-  for (const options of [{duplicate: true}, {implicit: true}]) {
-    const f = fixture(t, options), review = f.prepare();
-    assert.ok(review.blockingIssues.includes(options.duplicate ? 'DUPLICATE_GLOBAL_BINDING' : 'LEGACY_IMPLICIT_SCOPES_REVIEW_REQUIRED'));
-    const result = f.cli('restore', f.plan, f.pub); assert.equal(result.status, 1); assert.match(result.stderr, /PLAN_HAS_BLOCKING_ISSUES/);
-    assert.ok(!JSON.parse(fs.readFileSync(f.calls)).includes('push'));
-  }
+test('duplicate globals produce a blocked review plan even with reviewed legacy scopes', t => {
+  const f = fixture(t, {duplicate: true}), review = f.prepare();
+  assert.ok(review.blockingIssues.includes('DUPLICATE_GLOBAL_BINDING'));
+  const result = f.cli('restore', f.plan, f.pub); assert.equal(result.status, 1); assert.match(result.stderr, /PLAN_HAS_BLOCKING_ISSUES/);
+  assert.ok(!JSON.parse(fs.readFileSync(f.calls)).includes('push'));
+});
+test('reviewed empty legacy scopes preserve MVP scopes while null still blocks unreviewed scopes', t => {
+  assert.deepEqual(SETTINGS.legacyImplicitScopes, []);
+  const f = fixture(t, {implicit: true}), review = f.prepare();
+  assert.deepEqual(review.blockingIssues, []);
+  const stage = path.join(f.prep, 'stage');
+  const bundle = ci.unseal(fs.readFileSync(path.join(f.plan, 'prepared.enc')), Buffer.from(f.key, 'base64'));
+  const reviewedScopes = SETTINGS.legacyImplicitScopes;
+  try {
+    SETTINGS.legacyImplicitScopes = null;
+    assert.ok(ci.stageChecks(stage, bundle.plan).includes('LEGACY_IMPLICIT_SCOPES_REVIEW_REQUIRED'));
+  } finally { SETTINGS.legacyImplicitScopes = reviewedScopes; }
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(stage, 'appsscript.json'))).oauthScopes,
+    JSON.parse(fs.readFileSync(path.join(ROOT, 'appsscript.json'))).oauthScopes);
+  f.restore();
+  assert.ok(!JSON.parse(fs.readFileSync(f.calls)).includes('push'));
 });
 test('publish rejects missing or incorrect manually reviewed digest', t => {
   const f = fixture(t); f.prepare();
