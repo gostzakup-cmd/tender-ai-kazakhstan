@@ -1,0 +1,8 @@
+type RefSubjectType {
+
+id: Int
+
+nameRu: String
+
+nameKz: String
+}

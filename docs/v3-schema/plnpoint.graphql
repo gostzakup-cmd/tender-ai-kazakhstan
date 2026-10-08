@@ -1,0 +1,197 @@
+type PlnPoint {
+
+#   Уникальный идентификатор
+id: Int
+
+#    Ид родительского пункта плана
+rootrecordId: Int
+
+#   ИД Заказчика
+sysSubjectsId: Int
+
+#   ИД Организатора
+sysOrganizatorId: Int
+
+#   БИН/ИИН заказчика
+subjectBiin: String
+
+#   Наименование заказчика на русском языке
+subjectNameRu: String
+
+#   Наименование заказчика на государственном языке
+subjectNameKz: String
+
+#   Наименование на русском языке
+nameRu: String
+
+#   Наименование на государственном языке
+nameKz: String
+
+#   Код способа закупки (плановый)
+refTradeMethodsId: Int
+
+#   Код единицы измерения
+refUnitsCode: String
+
+#   Количество / объем
+count: Float
+
+#   Цена за единицу
+price: Float
+
+#   Общая сумма, утвержденная для закупки
+amount: Float
+
+#   Планируемый срок закупки
+refMonthsId: Int
+
+#   Статус пункта плана
+refPlnPointStatusId: Int
+
+#   Финансовый год в пункте плана
+plnPointYear: Int
+
+#   Код вида предмета закупки
+refSubjectTypeId: Int
+
+#   Код КТРУ
+refEnstruCode: String
+
+#   Код источника финансирования
+refFinsourceId: Int
+
+#   Код администратора бюджетной программы
+refAbpCode: Int
+
+#   Признак субъект/не субъект ГЗ (квазисектор) 0 - субъект ГЗ, 1 - не субъект ГЗ
+isQvazi: Int
+
+#   Дата создания записи
+dateCreate: String
+
+#   Дата изменения записи
+timestamp: String
+
+#   Код типа пункта плана
+refPointTypeId: Int
+
+#   Краткая характеристика на русском языке
+descRu: String
+
+#   Краткая характеристика на государственном языке
+descKz: String
+
+#   Дополнительное описание на государственном языке
+extraDescKz: String
+
+#   Дополнительное описание на русском языке
+extraDescRu: String
+
+#   Планируемая сумма на 1 год
+sum1: Float
+
+#   Планируемая сумма на 2 год
+sum2: Float
+
+#   Планируемая сумма на 3 год
+sum3: Float
+
+#   Срок поставки
+supplyDateRu: String
+
+#   Размер авансового платежа %
+prepayment: Float
+
+#   Обоснование применения способа закупки
+refJustificationId: Int
+
+#   Вид дополнительного соглашения
+refAmendmentAgreemTypeId: Int
+
+#   ИД основания создания дополнительного соглашения
+refAmendmAgreemJustifId: Int
+
+#   Номер пункта плана в договоре
+contractPrevPointId: Int
+
+#   Признаки ограничений закупки
+disablePersonId: Int
+
+#   ИД филиала (кому передано)
+transferSysSubjectsId: Int
+
+#   Тип передачи плана
+transferType: Int
+
+#   Код вида бюджета
+refBudgetTypeId: Int
+
+#   Идентификатор акта
+createdinActId: Int
+
+#   Активность
+isActive: Int
+
+#   Идентификатор активного акта
+activeActId: Int
+
+#   Объект удален
+isDeleted: Int
+
+#   ИД системы
+systemId: Int
+
+#   Дата индексации
+indexDate: String
+
+#   Годовой план
+PlanActs: PlnPointActs
+
+#   Места поставки
+PlansKato: [PlnPointsKato]
+
+#   Специфики
+PlansSpec: [PlnPointsSpec]
+
+#   Заказчик
+Customer: Subject
+
+#   Организатор
+Organizer: Subject
+
+#   Справочник единиц измерения
+RefUnits: RefUnits
+
+#   Вид предмета закупки
+RefSubjectType: RefSubjectType
+
+#   Способ закупки
+RefTradeMethods: RefTradeMethods
+
+#   Месяцы
+RefMonths: RefMonths
+
+#   Статус пункта плана
+RefPlnPointStatus: RefPlnPointStatus
+
+#   Источник финансирования
+RefFinsource: RefFinsource
+
+#   АБП
+RefAbp: RefAbp
+
+#   Тип пункта плана
+RefPointType: RefPointType
+
+#   Основания создания дополнительного соглашения
+RefAmendmAgreemJustif: RefAmendmAgreemJustif
+
+#   Обоснование применения способа закупки
+RefJustification: RefJustification
+
+#   Вид дополнительного соглашения
+RefAmendmentAgreemType: RefAmendmentAgreemType
+
+#   Тип бюджета
+RefBudgetType: RefBudgetType
+}

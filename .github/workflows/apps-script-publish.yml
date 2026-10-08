@@ -1,0 +1,169 @@
+name: Review and publish Apps Script
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'prepare: backup/review only; publish: previously reviewed plan'
+        required: true
+        default: prepare
+        type: choice
+        options:
+          - prepare
+          - publish
+      review_run_id:
+        description: 'publish only: successful preparation run ID'
+        required: false
+        default: ''
+        type: string
+      review_plan_sha256:
+        description: 'publish only: exact SHA-256 reviewed in preparation summary'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: tender-apps-script-production
+  cancel-in-progress: false
+
+env:
+  TENDER_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+  TENDER_OPERATION: ${{ inputs.operation }}
+  CLASP_BIN: ${{ github.workspace }}/tools/ci/node_modules/.bin/clasp
+
+jobs:
+  prepare:
+    if: ${{ inputs.operation == 'prepare' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact dispatched commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/ci/package-lock.json
+      - name: Install locked deployment tools
+        run: npm ci --prefix tools/ci --no-audit --no-fund
+      - name: Initialize private runner paths
+        run: node tools/actions-deploy.cjs paths
+      - name: Validate dispatch and run local tests
+        run: |
+          node tools/actions-deploy.cjs guard "$TENDER_OPERATION"
+          node --test tests/core.test.cjs tests/upload.test.cjs tests/actions.test.cjs
+      - name: Materialize temporary Google OAuth file
+        env:
+          CLASP_AUTH_JSON: ${{ secrets.CLASP_AUTH_JSON }}
+        run: node tools/actions-deploy.cjs auth "$TENDER_AUTH_DIR"
+      - name: Read existing project and encrypt full backup
+        env:
+          APPS_SCRIPT_BACKUP_KEY: ${{ secrets.APPS_SCRIPT_BACKUP_KEY }}
+        run: node tools/actions-deploy.cjs snapshot "$TENDER_WORK_DIR" "$TENDER_BACKUP_DIR"
+      - name: Persist encrypted backup before preparing any changes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tender-apps-script-backup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.TENDER_BACKUP_DIR }}/backup.enc
+          if-no-files-found: error
+          retention-days: 7
+      - name: Prepare immutable candidate and review digest
+        env:
+          APPS_SCRIPT_BACKUP_KEY: ${{ secrets.APPS_SCRIPT_BACKUP_KEY }}
+        run: node tools/actions-deploy.cjs plan "$TENDER_WORK_DIR" "$TENDER_PLAN_DIR"
+      - name: Persist review metadata and encrypted candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tender-apps-script-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.TENDER_PLAN_DIR }}/review.json
+            ${{ env.TENDER_PLAN_DIR }}/prepared.enc
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove temporary credentials and plaintext snapshots
+        if: ${{ always() }}
+        run: |
+          rm -rf -- "$TENDER_AUTH_DIR" "$TENDER_WORK_DIR" "$TENDER_BACKUP_DIR" "$TENDER_PLAN_DIR"
+
+  publish:
+    if: ${{ inputs.operation == 'publish' }}
+    environment: apps-script-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REVIEW_RUN_ID: ${{ inputs.review_run_id }}
+      REVIEW_PLAN_SHA256: ${{ inputs.review_plan_sha256 }}
+    steps:
+      - name: Checkout exact dispatched commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/ci/package-lock.json
+      - name: Install locked deployment tools
+        run: npm ci --prefix tools/ci --no-audit --no-fund
+      - name: Initialize private runner paths
+        run: node tools/actions-deploy.cjs paths
+      - name: Validate dispatch and run local tests
+        run: |
+          node tools/actions-deploy.cjs guard "$TENDER_OPERATION"
+          node --test tests/core.test.cjs tests/upload.test.cjs tests/actions.test.cjs
+      - name: Verify preparation run belongs to this workflow and commit
+        id: reviewed
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/actions-deploy.cjs resolve
+      - name: Download only the verified preparation artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ steps.reviewed.outputs.artifact_name }}
+          path: ${{ env.TENDER_REVIEW_DIR }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.review_run_id }}
+      - name: Validate reviewed digest and encrypted candidate without writing to Google
+        env:
+          APPS_SCRIPT_BACKUP_KEY: ${{ secrets.APPS_SCRIPT_BACKUP_KEY }}
+        run: node tools/actions-deploy.cjs restore "$TENDER_REVIEW_DIR" "$TENDER_WORK_DIR"
+      - name: Materialize temporary Google OAuth file
+        env:
+          CLASP_AUTH_JSON: ${{ secrets.CLASP_AUTH_JSON }}
+        run: node tools/actions-deploy.cjs auth "$TENDER_AUTH_DIR"
+      - name: Create a fresh encrypted backup immediately before publication
+        env:
+          APPS_SCRIPT_BACKUP_KEY: ${{ secrets.APPS_SCRIPT_BACKUP_KEY }}
+        run: node tools/actions-deploy.cjs snapshot-publish "$TENDER_WORK_DIR" "$TENDER_BACKUP_DIR"
+      - name: Persist fresh encrypted backup before remote write
+        id: persist_fresh_backup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tender-apps-script-pre-publish-backup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.TENDER_BACKUP_DIR }}/backup.enc
+          if-no-files-found: error
+          retention-days: 7
+      - name: Publish exact reviewed candidate and verify via fresh Apps Script API read
+        env:
+          BACKUP_ARTIFACT_ID: ${{ steps.persist_fresh_backup.outputs.artifact-id }}
+        run: node tools/actions-deploy.cjs publish "$TENDER_WORK_DIR" "$TENDER_REPORT_DIR"
+      - name: Persist verified file hashes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tender-apps-script-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.TENDER_REPORT_DIR }}/verified.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove temporary credentials and plaintext snapshots
+        if: ${{ always() }}
+        run: |
+          rm -rf -- "$TENDER_AUTH_DIR" "$TENDER_WORK_DIR" "$TENDER_BACKUP_DIR" "$TENDER_REVIEW_DIR" "$TENDER_REPORT_DIR"

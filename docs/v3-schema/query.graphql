@@ -1,0 +1,74 @@
+type Query {
+
+#   Реестр участников
+#
+# Arguments
+#   filter: Поиск по реестру участников
+#   limit: Количество записей на страницу (от 0 до 200)
+#   after: Последний ИД на странице
+Subjects(filter: SubjectFiltersInput, limit: Int, after: Int): [Subject]
+
+#   Реестр объявлений
+#
+# Arguments
+#   filter: Поиск по реестру объявлений
+#   limit: Количество записей на страницу (от 0 до 200)
+#   after: Последний ИД на странице
+TrdBuy(filter: TrdBuyFiltersInput, limit: Int, after: Int): [TrdBuy]
+
+#   Реестр договоров
+#
+# Arguments
+#   filter: Поиск по реестру договоров
+#   limit: Количество записей на страницу (от 0 до 200)
+#   after: Последний ИД на странице
+Contract(filter: ContractFiltersInput, limit: Int, after: Int): [Contract]
+
+#   Реестр актов
+#
+# Arguments
+#   filter: Поиск по реестру электронных актов
+#   limit: Количество записей на страницу (от 0 до 200)
+#   after: Последний ИД на странице
+Acts(filter: ContractActFiltersInput, limit: Int, after: Int): [ContractAct]
+
+#   Реестр лотов
+#
+# Arguments
+#   filter: Поиск по реестру лотов
+#   limit: Количество записей на страницу (от 0 до 200)
+#   after: Последний ИД на странице
+Lots(filter: LotsFiltersInput, limit: Int, after: Int): [Lots]
+
+#   Реестр годовых планов
+#
+# Arguments
+#   filter: Поиск по реестру пунктов планов
+#   limit: Количество записей на страницу (от 0 до 200)
+#   after: Последний ИД на странице
+Plans(filter: PlansFiltersInput, limit: Int, after: Int): [PlnPoint]
+
+#   Реестр недобросовестных поставщиков
+#
+# Arguments
+#   filter: Поиск по реестру недобросовествных поставщиков
+#   limit: Количество записей на страницу (от 0 до 200)
+#   after: Последний ИД на странице
+Rnu(filter: RnuFiltersInput, limit: Int, after: Int): [RnuList]
+
+#   Новости
+#
+# Arguments
+#   filter: Поиск по новостям
+#   limit: Количество записей на страницу (от 0 до 200)
+#   after: Последний ИД на странице
+News(filter: NewsFiltersInput, limit: Int, after: Int): [News]
+
+#   Заявки поставщиков
+#
+# Arguments
+#   filter: Поиск по заявкам поставщиков
+#   limit: Количество записей на страницу (от 0 до 200)
+#   after: Последний ИД на странице
+TrdApp(filter: TrdAppFiltersInput, limit: Int, after: Int): [TrdApp]
+}

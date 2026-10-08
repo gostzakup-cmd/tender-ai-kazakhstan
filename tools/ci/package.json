@@ -1,0 +1,12 @@
+{
+  "name": "tender-apps-script-ci",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned local tooling for GitHub Actions; not application dependencies",
+  "engines": {"node": ">=22"},
+  "dependencies": {
+    "@google/clasp": "3.4.1",
+    "acorn": "8.15.0",
+    "yaml": "2.8.1"
+  }
+}
