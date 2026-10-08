@@ -1,0 +1,100 @@
+{
+  "checkedAtUtc": "2026-10-08T22:03:29.707Z",
+  "checks": "Public documentation read only; no authenticated or paid provider execution",
+  "sources": [
+    {
+      "name": "documentAiPricing",
+      "url": "https://cloud.google.com/document-ai/pricing",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "06de73e9ee52ed747972ec3b2cfd90f594aa9eac9060d6143af30c2f1e7ff25b"
+    },
+    {
+      "name": "documentAiProcess",
+      "url": "https://cloud.google.com/document-ai/docs/process-documents-client-libraries",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "16fe5eea21325001f367680d74f00f685a8df903f75eb01358a5b8a7ab188235"
+    },
+    {
+      "name": "documentAiLimits",
+      "url": "https://cloud.google.com/document-ai/quotas",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "444300ab1ec303a5588298dc6bbf4bc587be602c6e420c789b1ace1bd2a4fa60"
+    },
+    {
+      "name": "vertexPdf",
+      "url": "https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/document-understanding",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "d0fab467f42dda46bc0e3dccdc3205084ede58112567059e6ca2052d6474a96a"
+    },
+    {
+      "name": "vertexPricing",
+      "url": "https://cloud.google.com/vertex-ai/generative-ai/pricing",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "037a1c3ff3e6d08e575bb542f08506ff91822e97e8bca143bd0868f953e76096"
+    },
+    {
+      "name": "geminiPdf",
+      "url": "https://ai.google.dev/gemini-api/docs/document-processing",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "5522e1d45a7303a3c40ebda2506de2fe4e06188861bdb4ee633a982db8677d00"
+    },
+    {"name":"bravePricing","url":"https://brave.com/search/api/","status":200,"curlExit":0,"sha256":"c2277bf82ab2b65964d932868799caca0ed3a1fd5eed8324b5891068531a4370"},
+    {
+      "name": "braveApi",
+      "url": "https://api-dashboard.search.brave.com/app/documentation/web-search/get-started",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "5726a33508f5429df0ba26686763ee43b9246b5f4f2dd1903b26068214616869"
+    },
+    {"name":"firecrawlPricing","url":"https://www.firecrawl.dev/pricing","status":200,"curlExit":0,"sha256":"a2c4cd65ef411e240a46acab2d8617bb14429e534176469ce8b2bdf55156dccf"},
+    {"name":"firecrawlScrape","url":"https://docs.firecrawl.dev/features/scrape","status":200,"curlExit":0,"sha256":"4f396ae16394fff6c112a4171a631d6e327d515f43c892b538a076e4a0d47ddc"},
+    {
+      "name": "driveImport",
+      "url": "https://developers.google.com/workspace/drive/api/guides/manage-uploads",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "4f5be33c69bc075d485283bbb7d966270008452e4d7a37c5fca1026e8d5a71cf"
+    },
+    {
+      "name": "appsScriptQuotas",
+      "url": "https://developers.google.com/apps-script/guides/services/quotas",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "6d679da8f79b9c479ecc38c3fefc545a0dc7cd6f3a5bbb56144587b981a08483"
+    },
+    {
+      "name": "customSearch",
+      "url": "https://developers.google.com/custom-search/v1/overview",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "7cbed6365fc457c1001a5f4f085ebfb7019c34a63c751820dc9678cf262344a9"
+    },
+    {
+      "name": "nationalBank",
+      "url": "https://nationalbank.kz/ru/exchangerates/ezhednevnye-oficialnye-rynochnye-kursy-valyut",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "dc4e8e4c132b21c1f97a26737fce611bc5ee64024e4c11ec668abb9607580b58"
+    },
+    {
+      "name": "fileLotsSchema",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/filelots.doc.html",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "7e8d0b8e03e753c93c77de3a0164e2e571f1556942a1f786e3e813dd3d416fe7"
+    },
+    {
+      "name": "fileTrdBuySchema",
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/filetrdbuy.doc.html",
+      "status": 200,
+      "curlExit": 0,
+      "sha256": "5400d3575341b2d4fa3deb0ddf0d9d6bf68d029b2d9464c1cf9a6edf27aa667f"
+    }
+  ]
+}
