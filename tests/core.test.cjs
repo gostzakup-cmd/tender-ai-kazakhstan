@@ -159,6 +159,73 @@ function data(h, name = 'ALL_LOTS') { return h.sheets.get(name).rows.slice(1); }
 function json(value) { return JSON.parse(JSON.stringify(value)); }
 const now = '2026-10-08T03:00:00Z';
 
+// Synthetic stage-2 responses: values here never substitute for a live API check.
+function stage2Responses(h, {numberMismatch = false, reflectedToken = ''} = {}) {
+  const row = {id: 43495954, lotNumber: '88105345-ЗЦП1', trdBuyId: 17735121,
+    trdBuyNumberAnno: '17735121-1', refTradeMethodsId: 3, refBuyTradeMethodsId: 3,
+    count: 500, amount: 550000, isDeleted: 0, pointList: [101],
+    Plans: [{id: 101, refSubjectTypeId: 1}],
+    RefLotsStatus: {id: 240, code: 'PublishedOfferAccept', nameRu: reflectedToken || 'TEST_STATUS'},
+    TrdBuy: {id: 17735121, numberAnno: '17735121-1', refTradeMethodsId: 3,
+      publishDate: '2026-10-07 11:28:44', startDate: '2026-10-07 11:30:00',
+      endDate: '2026-10-09 11:30:00', repeatStartDate: null, repeatEndDate: null}};
+  const deleted = {...row, id: 123, isDeleted: 1, Plans: [], pointList: [], TrdBuy: null};
+  const data = [{__type: {inputFields: ['id', 'lotNumber', 'refLotStatusId'].map(name => ({name}))}},
+    {Lots: [row]}, {Lots: [{...row, trdBuyId: numberMismatch ? 999 : row.trdBuyId}]}, {Lots: [row, deleted]}];
+  h.responses.push(...data.map(data => ({status: 200, body: JSON.stringify({data})})));
+}
+
+test('stage-2 lookup confirms both identities without changing state or granting readiness', () => {
+  const h = harness(); h.setup(); h.properties.set('GOSZAKUP_TOKEN', 'TEST_STAGE2_TOKEN');
+  h.properties.set('TENDER_V3_VERIFIED_CONFIG', 'TEST_OLD_PROOF');
+  const beforeProperties = [...h.properties], beforeSheets = json([...h.sheets]);
+  stage2Responses(h);
+  const report = h.c.inspectTenderStage2Evidence();
+  assert.equal(report.primaryIdRelationVerified, true);
+  assert.equal(report.primaryDateComparison.rawStringsMatch, true);
+  assert.equal(report.checks[1].apiIdentityMatches, false); // Missing methods remain unverified.
+  assert.equal(report.checks[0].apiSample.allPlanPointsCovered, true);
+  assert.equal(report.publishedProbe.deleted, 1);
+  assert.equal(report.publishedProbe.samples.length, 1);
+  assert.equal(report.isDeletedFilterAvailable, false);
+  for (const key of ['mvpReady', 'apiDateTimezoneVerified', 'fullActiveStatusSetVerified',
+    'allProcurementMethodUrlsVerified', 'fullCountryCoverageVerified']) assert.equal(report[key], false);
+  assert.deepEqual([...h.properties], beforeProperties);
+  assert.deepEqual(json([...h.sheets]), beforeSheets);
+  assert.equal(h.triggers.length, 0);
+  const bodies = h.fetchCalls.map(call => JSON.parse(call.options.payload));
+  assert.deepEqual(bodies[2].variables.filter, {lotNumber: '88105345-ЗЦП1'});
+  assert.deepEqual(bodies[3].variables.filter, {refLotStatusId: [210, 220, 230, 240]});
+  assert.ok(bodies.every(body => !Object.hasOwn(body.variables?.filter || {}, 'isDeleted')));
+});
+
+test('stage-2 lookup does not confirm an identity when the independent number lookup disagrees', () => {
+  const h = harness(); h.properties.set('GOSZAKUP_TOKEN', 'TEST_STAGE2_TOKEN');
+  stage2Responses(h, {numberMismatch: true});
+  assert.equal(h.c.inspectTenderStage2Evidence().primaryIdRelationVerified, false);
+});
+
+test('stage-2 diagnostic redacts reflected secrets before truncation and in console parts', () => {
+  const h = harness(), token = 'TEST_STAGE2_' + 'x'.repeat(300), lines = [];
+  h.properties.set('GOSZAKUP_TOKEN', token); h.c.console.log = line => lines.push(line);
+  stage2Responses(h, {reflectedToken: token});
+  const report = h.c.inspectTenderStage2Evidence();
+  assert.equal(report.checks[0].apiSample.RefLotsStatus.nameRu, '[REDACTED]');
+  assert.ok(!JSON.stringify(report).includes(token.slice(0, 100)));
+  assert.ok(!lines.join('').includes(token.slice(0, 100)));
+  const assembled = lines.map(line => line.replace(/^STAGE2_JSON_PART_\d+: /, '')).join('');
+  assert.deepEqual(JSON.parse(assembled), json(report));
+});
+
+test('stage-2 diagnostic fails safely on API errors without reading or modifying unrelated state', () => {
+  const h = harness(); h.properties.set('GOSZAKUP_TOKEN', 'TEST_STAGE2_TOKEN');
+  h.responses.push({status: 200, body: JSON.stringify({errors: [{message: 'TEST_STAGE2_TOKEN'}]})});
+  assert.throws(() => h.c.inspectTenderStage2Evidence(), /API_GRAPHQL_ERRORS/);
+  assert.equal(h.properties.size, 1);
+  assert.equal(h.sheets.size, 0);
+  assert.equal(h.triggers.length, 0);
+});
+
 test('setup creates five sheets and is repeatable without losing data/settings', () => {
   const h = harness(); h.setup();
   h.sheets.get('SETTINGS').rows[1][1] = 9;

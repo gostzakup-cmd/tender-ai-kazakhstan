@@ -195,6 +195,118 @@ function exportTenderApiDiagnostic() {
   return JSON.parse(raw);
 }
 
+/**
+ * Этап 2: только чтение известных лотов по документированным фильтрам id/lotNumber.
+ * Не меняет Sheets, Script Properties, курсор, доказательство готовности или триггеры.
+ * Публичные примеры не доказывают полноту реестра, зону API или все активные статусы.
+ */
+function inspectTenderStage2Evidence() {
+  try {
+    const config = v3Config_();
+    const token = apiToken_();
+    const references = [
+      {id: 43495954, trdBuyId: 17735121, lotNumber: '88105345-ЗЦП1', method: 'ЗЦП'},
+      {id: 43534707, trdBuyId: 17752933, lotNumber: '88119672-ОК1', method: 'Открытый конкурс'},
+      {id: 33822625, trdBuyId: 13633135, lotNumber: '74666464-АУК1', method: 'Аукцион (с 2022)'},
+      {id: 43534654, trdBuyId: 17752918, lotNumber: '88017458-ОИ3', method: 'Из одного источника'},
+      {id: 43534519, trdBuyId: 17752865, lotNumber: '87727613-КРБС1', method: 'Конкурс РБС'}
+    ];
+    const filterType = graphql_(config, '{ __type(name: "LotsFiltersInput") { inputFields { name } } }').__type;
+    if (!filterType || !Array.isArray(filterType.inputFields)) throw safeApiError_('API_STAGE2_FILTER_SCHEMA_MISSING');
+    const filterNames = filterType.inputFields.map(function (field) { return field && field.name; });
+    if (['id', 'lotNumber', 'refLotStatusId'].some(function (name) { return !filterNames.includes(name); })) {
+      throw safeApiError_('API_STAGE2_FILTER_SCHEMA_MISMATCH');
+    }
+    const query = 'query TenderStage2($filter: LotsFiltersInput, $limit: Int) {' +
+      ' Lots(filter: $filter, limit: $limit) {' +
+      ' id lotNumber trdBuyId trdBuyNumberAnno refTradeMethodsId refBuyTradeMethodsId count amount isDeleted pointList' +
+      ' Plans { id refSubjectTypeId }' +
+      ' RefLotsStatus { id code nameRu }' +
+      ' TrdBuy { id numberAnno refTradeMethodsId publishDate startDate endDate repeatStartDate repeatEndDate }' +
+      ' } }';
+    function lookup(filter, limit) {
+      const data = graphql_(config, query, {filter: filter, limit: limit});
+      if (!Array.isArray(data.Lots) || data.Lots.length > limit ||
+          data.Lots.some(function (row) { return !row || !Number.isInteger(row.id); }) ||
+          new Set(data.Lots.map(function (row) { return row.id; })).size !== data.Lots.length) {
+        throw safeApiError_('API_STAGE2_LOOKUP_INVALID');
+      }
+      return data.Lots;
+    }
+    function pick(object, keys) {
+      if (!object || typeof object !== 'object' || Array.isArray(object)) return null;
+      const result = {};
+      keys.forEach(function (key) {
+        const value = object[key];
+        result[key] = typeof value === 'string' ? value.split(token).join('[REDACTED]').slice(0, 200) :
+          value === null || typeof value === 'number' || typeof value === 'boolean' ? value : null;
+      });
+      return result;
+    }
+    function sample(row) {
+      if (!row) return null;
+      const result = pick(row, ['id', 'lotNumber', 'trdBuyId', 'trdBuyNumberAnno',
+        'refTradeMethodsId', 'refBuyTradeMethodsId', 'count', 'amount', 'isDeleted']);
+      result.pointList = Array.isArray(row.pointList) ? row.pointList.slice(0, 10).map(function (id) {
+        return Number.isInteger(id) ? id : null;
+      }) : null;
+      result.Plans = Array.isArray(row.Plans) ? row.Plans.slice(0, 10).map(function (plan) {
+        return pick(plan, ['id', 'refSubjectTypeId']);
+      }) : null;
+      result.planSampleTruncated = Boolean((row.pointList || []).length > 10 || (row.Plans || []).length > 10);
+      result.allPlanPointsCovered = Boolean(Array.isArray(row.pointList) && row.pointList.length &&
+        Array.isArray(row.Plans) && row.pointList.every(function (id) {
+          return row.Plans.some(function (plan) { return plan && plan.id === id; });
+        }));
+      result.RefLotsStatus = pick(row.RefLotsStatus, ['id', 'code', 'nameRu']);
+      result.TrdBuy = pick(row.TrdBuy, ['id', 'numberAnno', 'refTradeMethodsId',
+        'publishDate', 'startDate', 'endDate', 'repeatStartDate', 'repeatEndDate']);
+      return result;
+    }
+    const byId = lookup({id: references.map(function (row) { return row.id; })}, references.length);
+    if (byId.some(function (row) { return !references.some(function (ref) { return ref.id === row.id; }); })) {
+      throw safeApiError_('API_STAGE2_FILTER_NOT_RESPECTED');
+    }
+    const byNumber = lookup({lotNumber: references[0].lotNumber}, 2);
+    // Известные опубликованные статусы; не полный набор разрешающих подачу кодов.
+    const published = lookup({refLotStatusId: [210, 220, 230, 240]}, 20);
+    const checks = references.map(function (ref) {
+      const row = byId.find(function (item) { return item.id === ref.id; });
+      return {expected: ref, publicUrl: 'https://old.goszakup.gov.kz/ru/subpriceoffer/index/' + ref.trdBuyId + '/' + ref.id,
+        apiIdentityMatches: Boolean(row && row.lotNumber === ref.lotNumber && row.trdBuyId === ref.trdBuyId),
+        apiSample: sample(row)};
+    });
+    const primary = byId.find(function (row) { return row.id === references[0].id; });
+    const portalDates = {publishDate: '2026-10-07 11:28:44', startDate: '2026-10-07 11:30:00',
+      endDate: '2026-10-09 11:30:00'};
+    const report = {checkedAt: new Date().toISOString(), readOnly: true,
+      filtersVerifiedByIntrospection: true, isDeletedFilterAvailable: filterNames.includes('isDeleted'),
+      primaryIdRelationVerified: checks[0].apiIdentityMatches && byNumber.some(function (row) {
+        return row.id === references[0].id && row.lotNumber === references[0].lotNumber && row.trdBuyId === references[0].trdBuyId;
+      }), checks: checks, primaryByNumber: byNumber.map(sample),
+      primaryDateComparison: {portalDates: portalDates,
+        rawStringsMatch: Boolean(primary && primary.TrdBuy && Object.keys(portalDates).every(function (key) {
+          return primary.TrdBuy[key] === portalDates[key];
+        })), note: 'Совпадение строк не подтверждает IANA-зону и правила исторических дат.'},
+      publishedProbe: {statusIds: [210, 220, 230, 240], limit: 20, returned: published.length,
+        deleted: published.filter(function (row) { return row.isDeleted === 1; }).length,
+        withTrdBuy: published.filter(function (row) { return Boolean(row.TrdBuy); }).length,
+        withPlans: published.filter(function (row) { return Array.isArray(row.Plans) && row.Plans.length; }).length,
+        samples: published.filter(function (row) { return row.isDeleted === 0; }).slice(0, 3).map(sample)},
+      configurationIssues: v3RuntimeIssues_(config),
+      apiDateTimezoneVerified: false, fullActiveStatusSetVerified: false,
+      allProcurementMethodUrlsVerified: false, fullCountryCoverageVerified: false, mvpReady: false};
+    const safeJson = JSON.stringify(report).split(token).join('[REDACTED]');
+    // Console может обрезать длинную строку; нумерованные части можно собрать без потерь.
+    for (let offset = 0; offset < safeJson.length; offset += 4000) {
+      console.log('STAGE2_JSON_PART_' + (offset / 4000 + 1) + ': ' + safeJson.slice(offset, offset + 4000));
+    }
+    return JSON.parse(safeJson);
+  } catch (error) {
+    throw new Error(error.tenderSafeMessage || 'API_STAGE2_DIAGNOSTIC_FAILED: секретные ответы не выводятся.');
+  }
+}
+
 /** Справочник из официальной /help; не определяет активность по имени наугад. */
 function inspectGoszakupStatusReference() {
   assertSheetsReady_();

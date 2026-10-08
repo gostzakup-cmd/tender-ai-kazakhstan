@@ -1,0 +1,91 @@
+{
+  "checkedOnLocalDate": "2026-10-09",
+  "timezone": "Asia/Qyzylorda",
+  "checkedAtUtc": "2026-10-08T20:25:33.248Z",
+  "source": "Official public pages; no authorized GraphQL request performed",
+  "pages": [
+    {
+      "url": "https://old.goszakup.gov.kz/ru/subpriceoffer/index/17735121/43495954",
+      "httpStatus": 200,
+      "sha256": "591bb279f96338605294b0687d3f5121f69e9a17e8c86fdc2ad6d450a06c75fd",
+      "portalAnnouncementId": 17735121,
+      "portalLotId": 43495954,
+      "title": "Информация о лоте №88105345-ЗЦП1 :: Портал государственных закупок Республики Казахстан"
+    },
+    {
+      "url": "https://old.goszakup.gov.kz/ru/subpriceoffer/index/17752933/43534707",
+      "httpStatus": 200,
+      "sha256": "66a1b6998f2ffc1fe74832b252e3f4cb703811882b521e7f10c850a6a92b7837",
+      "portalAnnouncementId": 17752933,
+      "portalLotId": 43534707,
+      "title": "Информация о лоте №88119672-ОК1 :: Портал государственных закупок Республики Казахстан"
+    },
+    {
+      "url": "https://old.goszakup.gov.kz/ru/subpriceoffer/index/13633135/33822625",
+      "httpStatus": 200,
+      "sha256": "7bd70b2c2d0e2b027f72f9fb168ef73cbd0755051ef4d05d6317e46538158099",
+      "portalAnnouncementId": 13633135,
+      "portalLotId": 33822625,
+      "title": "Информация о лоте №74666464-АУК1 :: Портал государственных закупок Республики Казахстан"
+    },
+    {
+      "url": "https://old.goszakup.gov.kz/ru/subpriceoffer/index/17752918/43534654",
+      "httpStatus": 200,
+      "sha256": "96b5e3a44485c9b1ad4dffd7263d3669b311ff9a74547b15c4521cb61eef1ad6",
+      "portalAnnouncementId": 17752918,
+      "portalLotId": 43534654,
+      "title": "Информация о лоте №88017458-ОИ3 :: Портал государственных закупок Республики Казахстан"
+    },
+    {
+      "url": "https://old.goszakup.gov.kz/ru/subpriceoffer/index/17752865/43534519",
+      "httpStatus": 200,
+      "sha256": "98a1df9a544fd328ebf2b6927deb8435071464a2465ed8eae7cc49f1b79bbbc2",
+      "portalAnnouncementId": 17752865,
+      "portalLotId": 43534519,
+      "title": "Информация о лоте №87727613-КРБС1 :: Портал государственных закупок Республики Казахстан"
+    },
+    {
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/lotsfiltersinput.doc.html",
+      "httpStatus": 200,
+      "sha256": "f00a27abfe7a8aca927b70410834ac0b8e0e09e408de1e1aada1e2a0d6ea1f22"
+    },
+    {
+      "url": "https://wiki.goszakup.gov.kz/pages/viewpage.action?pageId=1311154",
+      "httpStatus": 200,
+      "sha256": "d0a1d886efc235393deb854a737628fb474a2d3c2cb1414b561d281ed0643991"
+    },
+    {
+      "url": "https://wiki.goszakup.gov.kz/pages/viewpage.action?pageId=1311120",
+      "httpStatus": 200,
+      "sha256": "8bca17e22e82feaf965afd87b2ee025fee5a151bc0660d82e091fd3851e02c77"
+    },
+    {
+      "url": "https://wiki.goszakup.gov.kz/pages/viewpage.action?pageId=1311047",
+      "httpStatus": 200,
+      "sha256": "e93c35875f0dd03903d4efcde3e4f4c8c58a1f6923b1ba3a3895654d003481b5"
+    },
+    {
+      "url": "https://wiki.goszakup.gov.kz/pages/viewpage.action?pageId=1311082",
+      "httpStatus": 200,
+      "sha256": "2b037691e0a046be54e3f1992bbb51528e33ce2f702a7d1db483ed8f17792928"
+    },
+    {
+      "url": "https://developers.google.com/apps-script/guides/services/quotas",
+      "httpStatus": 200,
+      "sha256": "4cdeb33ce8290c9d3c96c3818326facd9e2641e3b09ec7802672205b2d6d46a6"
+    }
+  ],
+  "reportedByUser": {
+    "totalCount": 32440437,
+    "pagesChecked": 2,
+    "itemsChecked": 200,
+    "statusReferenceCount": 37
+  },
+  "unverified": [
+    "Lots.id correlation",
+    "API date timezone",
+    "complete active-status codes",
+    "all method URLs",
+    "daily country coverage"
+  ]
+}
