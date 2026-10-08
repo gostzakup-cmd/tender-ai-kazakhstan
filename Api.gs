@@ -4,7 +4,8 @@
  * Source: /help/ и /help/v3/schema/ на официальном хосте.
  */
 function assertApiReady_() {
-  return assertV3Ready_();
+  assertV3Ready_();
+  throw safeApiError_('FULL_SCAN_DISABLED: полный обход и daily trigger заблокированы; сначала ограниченный пилот и подтверждение инкрементального покрытия.');
 }
 
 function apiToken_() {
@@ -84,7 +85,7 @@ function fetchGoszakupPage_(cursor) {
 }
 
 /** HTTPS-транспорт для будущего подтверждённого адаптера. */
-function fetchJsonWithRetry_(url, options) {
+function fetchJsonWithRetry_(url, options, requestBudget) {
   if (!/^https:\/\/ows\.goszakup\.gov\.kz(?:\/|$)/.test(url)) {
     throw new Error('Разрешён только официальный HTTPS-хост API.');
   }
@@ -92,6 +93,8 @@ function fetchJsonWithRetry_(url, options) {
     muteHttpExceptions: true, followRedirects: false, validateHttpsCertificates: true
   });
   for (let attempt = 0; attempt < 4; attempt += 1) {
+    // Пилот считает каждую HTTP-попытку, включая retries, до отправки запроса.
+    if (requestBudget) requestBudget.claim();
     let response;
     try {
       response = UrlFetchApp.fetch(url, request);

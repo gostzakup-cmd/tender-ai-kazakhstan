@@ -73,6 +73,8 @@ function getTenderStatus() {
     consecutiveFailures: 0, dailyTriggers: 0, continuationTriggers: 0,
     timezone: TENDER.timezone, maxLotAmountKzt: TENDER.maxAmount, mvpReady: false
   };
+  report.fullSyncEnabled = false;
+  report.dailyTriggerEnabled = false;
   if (report.spreadsheetBound) {
     try { assertSheetsReady_(); report.sheetsReady = true; }
     catch (error) { report.setupIssue = error.tenderSafeMessage || 'SHEETS_UNAVAILABLE'; }
@@ -110,7 +112,8 @@ function showTenderStatus() {
 
 /**
  * Реальный GraphQL-запрос и introspection с токеном из Script Properties.
- * До двух страниц; никаких изменений ALL_LOTS, курсора и триггеров.
+ * До двух страниц + необязательная проверка ≤5 явных ID.
+ * Никаких изменений ALL_LOTS, курсора и триггеров.
  */
 function testGoszakupV3Connection() {
   assertSheetsReady_();
@@ -126,11 +129,29 @@ function testGoszakupV3Connection() {
     const second = first.nextCursor === null ? {items: [], nextCursor: null,
       paginationVerified: first.paginationVerified} : v3RawPage_(config, first.nextCursor, true);
     const items = first.items.concat(second.items);
+    let targetedItems = [];
+    const rawIds = props.getProperty('GOSZAKUP_DIAGNOSTIC_LOT_IDS');
+    if (rawIds) {
+      let ids;
+      try { ids = JSON.parse(rawIds); } catch (e) { throw safeApiError_('API_DIAGNOSTIC_IDS_INVALID'); }
+      if (!Array.isArray(ids) || !ids.length || ids.length > 5 || new Set(ids).size !== ids.length ||
+          ids.some(function (id) { return !Number.isInteger(id) || id < 1 || id > 2147483647; })) {
+        throw safeApiError_('API_DIAGNOSTIC_IDS_INVALID');
+      }
+      const data = graphql_(config, 'query TenderSample($ids: [Int!]!) { Lots(filter: {id: $ids}, limit: 5) { ' +
+        selection_(config.fields) + ' } }', {ids: ids});
+      targetedItems = data.Lots;
+      if (!Array.isArray(targetedItems) || targetedItems.length !== ids.length ||
+          new Set(targetedItems.map(function (item) { return field_(item, config.fields.id); })).size !== ids.length ||
+          targetedItems.some(function (item) { return !ids.includes(field_(item, config.fields.id)); })) {
+        throw safeApiError_('API_DIAGNOSTIC_IDS_MISMATCH');
+      }
+    }
     const issues = v3RuntimeIssues_(config);
     if (!first.paginationVerified || !second.paginationVerified) issues.push('V3_PAGE_INFO_UNVERIFIED');
     let eligibleSamples = 0;
     const normalizationErrors = [];
-    if (!issues.length) items.forEach(function (item) {
+    if (!issues.length) items.concat(targetedItems).forEach(function (item) {
       try {
         const result = normalizeV3Lot_(item, config);
         if (result.lot) eligibleSamples += 1;
@@ -140,7 +161,7 @@ function testGoszakupV3Connection() {
       }
     });
     const ready = !issues.length && !normalizationErrors.length && eligibleSamples > 0;
-    if (!items.length) issues.push('NO_REAL_LOT_SAMPLE');
+    if (!items.length && !targetedItems.length) issues.push('NO_REAL_LOT_SAMPLE');
     else if (!issues.length && !eligibleSamples) issues.push('NO_ELIGIBLE_NORMALIZED_SAMPLE');
     const token = apiToken_();
     function limited(value) {
@@ -162,6 +183,7 @@ function testGoszakupV3Connection() {
       endpointVerifiedByResponse: config.endpoint,
       mapping: mapping, pagesChecked: first.nextCursor === null ? 1 : 2,
       itemsChecked: items.length,
+      targetedItemsChecked: targetedItems.length,
       paginationVerified: first.paginationVerified && second.paginationVerified,
       paginationEndReached: second.paginationVerified && second.nextCursor === null,
       pageInfo: [first.pageInfo, second.pageInfo].filter(Boolean).map(function (p) {

@@ -1,0 +1,41 @@
+{
+  "provenance": "Owner-provided summary of real inspectTenderStage2Evidence execution; not a raw API response and not executed in this cloud environment",
+  "recordedOnLocalDate": "2026-10-09",
+  "primaryIdRelationVerified": true,
+  "primaryLot": {
+    "id": 43495954,
+    "lotNumber": "88105345-ЗЦП1",
+    "trdBuyId": 17735121,
+    "amount": 550000,
+    "count": 500,
+    "isDeleted": 0,
+    "Plans": [
+      {
+        "id": 88105345,
+        "refSubjectTypeId": 1
+      }
+    ],
+    "RefLotsStatus": {
+      "code": "PublishedOfferAccept"
+    },
+    "TrdBuy": {
+      "publishDate": "2026-10-07 11:28:44",
+      "startDate": "2026-10-07 11:30:00",
+      "endDate": "2026-10-09 11:30:00"
+    }
+  },
+  "fiveKnownPortalIdRelationsReportedVerified": true,
+  "singleSourcePlannedMethodId": 3,
+  "singleSourceActualMethodId": 6,
+  "publishedProbe": {
+    "items": 20,
+    "deleted": 0,
+    "withTrdBuy": 20,
+    "withPlans": 9
+  },
+  "isDeletedFilterAvailable": false,
+  "mvpReady": false,
+  "rawDatesEqualPortal": true,
+  "sourceTimezoneVerified": false,
+  "fullRegistryCoverageVerified": false
+}

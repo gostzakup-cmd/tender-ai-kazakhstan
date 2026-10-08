@@ -69,11 +69,11 @@ test('remote push is refused without local review', t => {
   const result = f.cli('push'); assert.equal(result.status, 1); assert.match(result.stderr, /REVIEW_REQUIRED/);
   assert.deepEqual(JSON.parse(fs.readFileSync(f.log)), ['clone']);
 });
-test('reviewed push verifies all eight MVP files and retained remote files by fresh clone', t => {
+test('reviewed push verifies all managed MVP files and retained remote files by fresh clone', t => {
   const f = fixture(t); assert.equal(f.cli('prepare').status, 0);
   const result = f.cli('push', true); assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout); assert.equal(report.status, 'UPLOAD_VERIFIED');
-  assert.equal(report.files.length, 10); // seven scripts, manifest, two preserved files
+  assert.equal(report.files.length, helper.FILES.length + 3); // scripts, manifest, two preserved files
   assert.deepEqual(JSON.parse(fs.readFileSync(f.log)), ['clone', 'clone', 'status', 'push', 'clone']);
   const actual = JSON.parse(fs.readFileSync(f.remote));
   assert.equal(actual.ExistingView.source, f.files.ExistingView.source);
