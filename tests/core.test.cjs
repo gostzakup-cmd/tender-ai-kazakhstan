@@ -1070,6 +1070,38 @@ test('read-only cursor probe returns safe evidence when pageInfo is missing', ()
   assert.deepEqual(json([...h.sheets].map(([name, sheet]) => [name, sheet.rows])), original);
 });
 
+test('read-only cursor probe classifies null terminal marker without confirming completeness', () => {
+  const {h} = pilotFixture();
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
+  assert.equal(h.c.runTenderBoundedPilot().issue, 'PILOT_CURSOR_INVALID');
+  const before = json([...h.sheets].map(([name, sheet]) => [name, sheet.rows]));
+  rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0
+  }}});
+  const result = h.c.inspectTenderPilotPaginationConflict();
+  assert.equal(result.lotsResultKind, 'null');
+  assert.equal(result.terminalNullCandidate, true);
+  assert.deepEqual(json(result.pageInfoIssues), ['LOTS_NOT_ARRAY']);
+  assert.equal(result.complete, false);
+  assert.equal(result.watermarkAdvanced, false);
+  assert.deepEqual(json([...h.sheets].map(([name, sheet]) => [name, sheet.rows])), before);
+  assert.equal(h.triggers.length, 0);
+});
+
+test('read-only cursor probe distinguishes missing Lots from explicit null', () => {
+  const {h} = pilotFixture();
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
+  assert.equal(h.c.runTenderBoundedPilot().issue, 'PILOT_CURSOR_INVALID');
+  rawResponse(h, {data: {}, extensions: {pageInfo: {limitPage: 20, totalCount: 1,
+    hasNextPage: false, lastId: 0}}});
+  const result = h.c.inspectTenderPilotPaginationConflict();
+  assert.equal(result.lotsResultKind, 'missing');
+  assert.equal(result.terminalNullCandidate, false);
+  assert.equal(result.complete, false);
+});
+
 test('read-only cursor probe reports malformed pageInfo fields without weakening pilot', () => {
   const {h} = pilotFixture();
   pilotResponse(h, 'TrdBuy', []);
