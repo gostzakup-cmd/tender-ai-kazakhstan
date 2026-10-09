@@ -992,6 +992,37 @@ test('filtered pagination reads short pages to confirmed total and rejects repea
   assert.throws(() => h.c.pilotScan_(config, 'Lots', {}, 'id', () => {}, {}), /PILOT_CURSOR_ORDER/);
 });
 
+test('contradictory filtered pageInfo retains safe cursor evidence and still blocks completion', () => {
+  const {h, config} = pilotFixture(), report = {};
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 2, next: true});
+  pilotResponse(h, 'Lots', [pilotRow(101)], {total: 2, next: true});
+  assert.throws(() => h.c.pilotScan_(config, 'Lots', {lastUpdateDate: ['2026-10-08 07:00:00', '2026-10-08 07:59:00']},
+    'id', () => {}, report), /PILOT_CURSOR_INVALID/);
+  assert.equal(report.complete, false);
+  assert.equal(report.pages, 2);
+  assert.equal(report.items, 2);
+  assert.deepEqual(json(report.pageTrace), [
+    {after: null, returned: 1, firstId: 102, lastRowId: 102, pageInfoLastId: 102,
+      hasNextPage: true, cumulativeItems: 1, totalCount: 2},
+    {after: 102, returned: 1, firstId: 101, lastRowId: 101, pageInfoLastId: 101,
+      hasNextPage: true, cumulativeItems: 2, totalCount: 2}
+  ]);
+  assert.equal(h.fetchCalls.length, 2);
+  assert.ok(!JSON.stringify(report).includes('TEST_ONLY_SECRET'));
+});
+
+test('cursor lastId mismatch is visible in trace but never consumed', () => {
+  const {h, config} = pilotFixture(), report = {};
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 3, next: true, lastId: 999});
+  let consumed = 0;
+  assert.throws(() => h.c.pilotScan_(config, 'Lots', {}, 'id', () => { consumed += 1; }, report),
+    /PILOT_CURSOR_INVALID/);
+  assert.equal(report.complete, false); assert.equal(consumed, 0);
+  assert.equal(report.pageTrace[0].pageInfoLastId, 999);
+  assert.equal(report.pageTrace[0].lastRowId, 102);
+  assert.equal(h.fetchCalls.length, 1);
+});
+
 test('global or changing filtered totalCount is not accepted as complete coverage', () => {
   const {h, config} = pilotFixture();
   pilotResponse(h, 'Lots', [pilotRow()], {total: 32440437});

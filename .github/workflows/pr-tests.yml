@@ -23,8 +23,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install CI parser dependencies
-        run: npm install --prefix tools/ci --no-save --no-package-lock acorn yaml
+      - name: Install CI parser dependencies without clasp transitive dependencies
+        run: |
+          mkdir -p "$RUNNER_TEMP/tender-pr-parsers" tools/ci/node_modules
+          npm install --prefix "$RUNNER_TEMP/tender-pr-parsers" --no-save --no-package-lock --ignore-scripts acorn@8.15.0 yaml@2.8.1
+          cp -R "$RUNNER_TEMP/tender-pr-parsers/node_modules/acorn" tools/ci/node_modules/acorn
+          cp -R "$RUNNER_TEMP/tender-pr-parsers/node_modules/yaml" tools/ci/node_modules/yaml
       - name: Run offline unit tests
         run: node --test tests/core.test.cjs tests/upload.test.cjs tests/actions.test.cjs
       - name: Validate patch whitespace
