@@ -605,3 +605,106 @@ function runTenderBoundedPilot() {
     return report;
   } finally { lock.releaseLock(); }
 }
+
+
+/**
+ * Manual national-regime review queue. The public OWS v3 Lots type does
+ * not expose the tender portal's "Изъятие из национального режима — Да/Нет"
+ * flag. Never infer "Нет" from a name, price, seller or absent API field.
+ *
+ * This explicit owner-run helper adds new observed IDs and refreshes
+ * descriptive columns, preserving all owner-entered verdicts/evidence.
+ * No GraphQL calls, production sheets, watermarks or triggers.
+ */
+function refreshTenderNationalGate() {
+  assertSheetsReady_();
+  const headers = ['LOT_ID', 'Тауар', 'Бюджет ₸', 'API статус (пилот)',
+    'Классификация', 'Лот сілтемесі', 'Ұлттық режим (портал белгісі)',
+    'Дәлел сілтемесі', 'Тексерілген күні',
+    'Дәлел сипаттамасы (порталдағы белгі)', 'АВТО СҮЗГІ ШЕШІМІ', 'Ескерту'];
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw safeApiError_('PILOT_ALREADY_RUNNING');
+  try {
+    const book = spreadsheet_();
+    const source = book.getSheetByName('PILOT_LOTS');
+    if (!source || !source.getLastRow() ||
+        source.getRange(1, 1, 1, TENDER_PILOT.headers.PILOT_LOTS.length).getValues()[0].join('|') !==
+        TENDER_PILOT.headers.PILOT_LOTS.join('|')) throw safeApiError_('PILOT_SHEET_STRUCTURE_INVALID');
+    const records = source.getDataRange().getValues().slice(1).filter(function (r) { return r[0] !== ''; });
+    if (records.length > TENDER_PILOT.maxRows) throw safeApiError_('PILOT_STORAGE_LIMIT');
+    const observed = new Map();
+    records.forEach(function (r) {
+      const id = String(r[0]);
+      if (!/^\d{1,10}$/.test(id) || Number(id) < 1 || observed.has(id)) {
+        throw safeApiError_('NATIONAL_GATE_SOURCE_INVALID');
+      }
+      let normalized = null;
+      if (r[7] !== '') {
+        try { normalized = JSON.parse(r[7]); }
+        catch (e) { throw safeApiError_('NATIONAL_GATE_SOURCE_INVALID'); }
+        if (!normalized || normalized.id !== id ||
+            typeof normalized.name !== 'string' ||
+            typeof normalized.amount !== 'number' || !Number.isFinite(normalized.amount) ||
+            !/^https:\/\/(?:www\.|old\.)?goszakup\.gov\.kz\//.test(normalized.url)) {
+          throw safeApiError_('NATIONAL_GATE_SOURCE_INVALID');
+        }
+      }
+      observed.set(id, [id,
+        normalized ? pilotSafe_(normalized.name) : '',
+        normalized ? normalized.amount : '',
+        pilotSafe_(r[2]),
+        pilotSafe_(r[3]),
+        normalized ? normalized.url : '']);
+    });
+    const gate = book.getSheetByName('NATIONAL_GATE');
+    if (gate && gate.getLastRow() &&
+        gate.getRange(1, 1, 1, headers.length).getValues()[0].join('|') !== headers.join('|')) {
+      throw safeApiError_('NATIONAL_GATE_STRUCTURE_INVALID');
+    }
+    const existing = new Map();
+    if (gate && gate.getLastRow()) gate.getDataRange().getValues().slice(1).forEach(function (row, i) {
+      // Explanatory text beneath the numbered records is not a lot ID.
+      if (!/^\d{1,10}$/.test(String(row[0]))) return;
+      const id = String(row[0]);
+      if (existing.has(id) || !['НЕ ПРОВЕРЕНО', 'ДА', 'НЕТ'].includes(row[6])) {
+        throw safeApiError_('NATIONAL_GATE_EVIDENCE_INVALID');
+      }
+      existing.set(id, {row: i + 2, data: row});
+    });
+    if (existing.size + Array.from(observed.keys()).filter(function (id) { return !existing.has(id); }).length >
+        TENDER_PILOT.maxRows) throw safeApiError_('PILOT_STORAGE_LIMIT');
+    const sheet = gate || book.insertSheet('NATIONAL_GATE');
+    if (!sheet.getLastRow()) {
+      ensureCapacity_(sheet, 1, headers.length);
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
+    // Update only the descriptive fields. The user's G:J national evidence
+    // and the K decision formula are never overwritten.
+    observed.forEach(function (values, id) {
+      if (!existing.has(id)) return;
+      sheet.getRange(existing.get(id).row, 2, 1, 5).setValues([values.slice(1)]);
+    });
+    let added = 0;
+    observed.forEach(function (values, id) {
+      if (existing.has(id)) return;
+      const next = sheet.getLastRow() + 1;
+      ensureCapacity_(sheet, next, headers.length);
+      sheet.getRange(next, 1, 1, headers.length).setNumberFormat('@');
+      const formula = '=IF(G' + next + '="НЕ ПРОВЕРЕНО";"HOLD_NATIONAL";' +
+        'IF(OR(H' + next + '="";I' + next + '="";J' + next + '="");"HOLD_EVIDENCE";' +
+        'IF(G' + next + '="ДА";"SKIP";IF(G' + next + '="НЕТ";' +
+        'IF(E' + next + '<>"ELIGIBLE_GOODS";"HOLD_CLASSIFICATION";"PASS_TO_TS");"HOLD_NATIONAL"))))';
+      sheet.getRange(next, 1, 1, headers.length).setValues([
+        values.concat(['НЕ ПРОВЕРЕНО', '', '', '', formula, 'Жаңа лот; ұлттық режим расталмаған'])
+      ]);
+      added += 1;
+    });
+    SpreadsheetApp.flush();
+    const result = {mode: 'MANUAL_NATIONAL_GATE_REFRESH', observedLots: observed.size,
+      added: added, existingRetained: existing.size, nationalRegimeAutomaticallyDetermined: 0,
+      complete: false, countryCoverageVerified: false, dailyCoverageVerified: false,
+      watermarkAdvanced: false, mvpReady: false};
+    console.log(JSON.stringify(result));
+    return result;
+  } finally { lock.releaseLock(); }
+}

@@ -1593,3 +1593,34 @@ test('invalid goods dates still block readiness even when another sample normali
   assert.equal(report.subjectTypeQuarantineSamples, 0);
   assert.equal(h.properties.has('TENDER_V3_VERIFIED_CONFIG'), false);
 });
+
+test('national gate refresh adds unknown lots and preserves manual evidence on rerun', () => {
+  const h = harness(); h.setup();
+  const header = ['LOT_ID','HASH','STATUS','CLASSIFICATION','PLANNED_METHOD_ID','ACTUAL_METHOD_ID','PUBLISHED_RAW','NORMALIZED_JSON','FIRST_OBSERVED','LAST_OBSERVED','REVISION'];
+  const source = h.sheets.get('PILOT_LOTS') || h.sheets.get('PILOT_LOTS') ||
+    (() => { const sheet = h.c.SpreadsheetApp.getActiveSpreadsheet().insertSheet('PILOT_LOTS'); return sheet; })();
+  source.appendRow(header);
+  const first = lot('101');
+  source.appendRow(['101', 'hash', 'PublishedOfferAccept', 'ELIGIBLE_GOODS', 3, 3, '',
+    JSON.stringify(first), now, now, 1]);
+  const r1 = h.c.refreshTenderNationalGate();
+  assert.equal(r1.added, 1);
+  const gate = h.sheets.get('NATIONAL_GATE');
+  assert.equal(gate.rows[1][6], 'НЕ ПРОВЕРЕНО');
+  assert.equal(gate.rows[1][10].includes('HOLD_NATIONAL'), true);
+  gate.rows[1][6] = 'НЕТ';
+  gate.rows[1][7] = 'https://goszakup.gov.kz/proof';
+  gate.rows[1][8] = '2026-10-09';
+  gate.rows[1][9] = 'Портал: Изъятие из национального режима — Нет';
+  const r2 = h.c.refreshTenderNationalGate();
+  assert.equal(r2.added, 0);
+  assert.equal(gate.rows[1][6], 'НЕТ');
+  assert.equal(gate.rows[1][7], 'https://goszakup.gov.kz/proof');
+  source.appendRow(['102', 'hash', 'PublishedOfferAccept', 'ELIGIBLE_GOODS', 3, 3, '',
+    JSON.stringify(lot('102')), now, now, 1]);
+  const r3 = h.c.refreshTenderNationalGate();
+  assert.equal(r3.added, 1);
+  assert.equal(gate.rows[2][0], '102');
+  assert.equal(gate.rows[2][6], 'НЕ ПРОВЕРЕНО');
+  assert.equal(h.triggers.length, 0);
+});
