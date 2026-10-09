@@ -1049,6 +1049,45 @@ test('read-only filtered cursor probe records one contradictory extra page witho
   assert.equal(h.triggers.length, 0);
 });
 
+test('read-only cursor probe returns safe evidence when pageInfo is missing', () => {
+  const {h} = pilotFixture();
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
+  const first = h.c.runTenderBoundedPilot();
+  assert.equal(first.issue, 'PILOT_CURSOR_INVALID');
+  const original = json([...h.sheets].map(([name, sheet]) => [name, sheet.rows]));
+  const calls = h.fetchCalls.length;
+  rawResponse(h, {data: {Lots: []}});
+  const report = h.c.inspectTenderPilotPaginationConflict();
+  assert.deepEqual(json(report.pageInfoIssues), ['PAGE_INFO_MISSING']);
+  assert.equal(report.pageInfoPresent, false);
+  assert.equal(report.hasNextPage, null);
+  assert.equal(report.totalCount, null);
+  assert.equal(report.nextPageReturned, 0);
+  assert.equal(report.complete, false);
+  assert.equal(report.watermarkAdvanced, false);
+  assert.equal(h.fetchCalls.length, calls + 1);
+  assert.deepEqual(json([...h.sheets].map(([name, sheet]) => [name, sheet.rows])), original);
+});
+
+test('read-only cursor probe reports malformed pageInfo fields without weakening pilot', () => {
+  const {h} = pilotFixture();
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
+  assert.equal(h.c.runTenderBoundedPilot().issue, 'PILOT_CURSOR_INVALID');
+  rawResponse(h, {data: {Lots: []}, extensions: {pageInfo: {
+    limitPage: null, totalCount: '1', hasNextPage: 'false', lastId: null
+  }}});
+  const report = h.c.inspectTenderPilotPaginationConflict();
+  assert.deepEqual(json(report.pageInfoIssues),
+    ['LIMIT_PAGE_MISMATCH', 'HAS_NEXT_PAGE_INVALID', 'TOTAL_COUNT_INVALID']);
+  assert.equal(report.pageInfoLimitPageType, 'object');
+  assert.equal(report.pageInfoTotalCountType, 'string');
+  assert.equal(report.pageInfoHasNextPageType, 'string');
+  assert.equal(report.complete, false);
+  assert.equal(report.requests, 1);
+});
+
 test('read-only filtered cursor probe rejects unsuitable or unverified reports before HTTP', () => {
   const {h} = pilotFixture();
   const baseline = h.fetchCalls.length;

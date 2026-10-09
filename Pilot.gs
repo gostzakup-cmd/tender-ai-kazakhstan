@@ -150,28 +150,53 @@ function inspectTenderPilotPaginationConflict() {
       limit: TENDER_PILOT.pageSize, after: cursor
     });
     const rows = response.data.Lots, info = response.extensions && response.extensions.pageInfo;
-    if (!Array.isArray(rows) || rows.length > TENDER_PILOT.pageSize || !info ||
-        info.limitPage !== TENDER_PILOT.pageSize || typeof info.hasNextPage !== 'boolean' ||
-        !Number.isSafeInteger(info.totalCount) || info.totalCount < 0) {
-      throw safeApiError_('PILOT_CURSOR_PROBE_PAGE_INFO_INVALID');
+    // The third page may have no pageInfo, or internally contradictory fields.
+    // This is a READ-ONLY diagnostic, so report only whitelisted structural
+    // evidence instead of throwing away the evidence. Never certify coverage.
+    const pageInfoIssues = [];
+    if (!Array.isArray(rows)) pageInfoIssues.push('LOTS_NOT_ARRAY');
+    else if (rows.length > TENDER_PILOT.pageSize) pageInfoIssues.push('LOTS_PAGE_TOO_LARGE');
+    if (!info || typeof info !== 'object' || Array.isArray(info)) pageInfoIssues.push('PAGE_INFO_MISSING');
+    else {
+      if (info.limitPage !== TENDER_PILOT.pageSize) pageInfoIssues.push('LIMIT_PAGE_MISMATCH');
+      if (typeof info.hasNextPage !== 'boolean') pageInfoIssues.push('HAS_NEXT_PAGE_INVALID');
+      if (!Number.isSafeInteger(info.totalCount) || info.totalCount < 0) pageInfoIssues.push('TOTAL_COUNT_INVALID');
     }
-    const ids = rows.map(function (row) { return Number(sourceId_(row.id)); });
-    const orderValid = ids.every(function (id, i) {
+    const validRows = Array.isArray(rows) && rows.length <= TENDER_PILOT.pageSize;
+    let ids = [];
+    if (validRows) {
+      try { ids = rows.map(function (row) { return Number(sourceId_(row && row.id)); }); }
+      catch (e) { ids = []; pageInfoIssues.push('LOT_ID_INVALID'); }
+    }
+    const orderValid = validRows && ids.length === rows.length && ids.every(function (id, i) {
       return Number.isSafeInteger(id) && id > 0 && id < (i ? ids[i - 1] : cursor);
     });
     const lastReturnedId = ids.length ? ids[ids.length - 1] : null;
-    const infoLastId = info.lastId == null ? null : Number(sourceId_(info.lastId));
+    let infoLastId = null;
+    if (info && info.lastId != null) {
+      try { infoLastId = Number(sourceId_(info.lastId)); }
+      catch (e) { pageInfoIssues.push('PAGE_INFO_LAST_ID_INVALID'); }
+    }
     const report = {
       mode: 'READ_ONLY_SINGLE_PAGE', from: window.from, to: window.to,
       sourceDateTimezone: config.dateTimezone, stream: 'Lots.lastUpdateDate',
       requestedAfter: cursor, priorReportedTotal: last.totalCount,
       priorCumulativeItems: last.cumulativeItems,
-      nextPageReturned: rows.length, firstId: ids.length ? ids[0] : null,
+      nextPageReturned: validRows ? rows.length : null, firstId: ids.length ? ids[0] : null,
       lastId: lastReturnedId, pageInfoLastId: infoLastId,
-      hasNextPage: info.hasNextPage, totalCount: info.totalCount,
-      descendingOrderValid: orderValid, lastIdMatches: lastReturnedId === infoLastId,
-      priorTotalStillMatches: info.totalCount === last.totalCount,
-      contradictoryExtraRows: rows.length > 0 && last.cumulativeItems >= last.totalCount,
+      hasNextPage: info && typeof info.hasNextPage === 'boolean' ? info.hasNextPage : null,
+      totalCount: info && Number.isSafeInteger(info.totalCount) ? info.totalCount : null,
+      pageInfoIssues: pageInfoIssues,
+      pageInfoPresent: !!info && typeof info === 'object' && !Array.isArray(info),
+      extensionsPresent: !!response.extensions && typeof response.extensions === 'object',
+      pageInfoLimitPage: info && Number.isSafeInteger(info.limitPage) ? info.limitPage : null,
+      pageInfoLimitPageType: info ? typeof info.limitPage : 'missing',
+      pageInfoHasNextPageType: info ? typeof info.hasNextPage : 'missing',
+      pageInfoTotalCountType: info ? typeof info.totalCount : 'missing',
+      descendingOrderValid: orderValid,
+      lastIdMatches: infoLastId === null && lastReturnedId === null ? null : lastReturnedId === infoLastId,
+      priorTotalStillMatches: info && Number.isSafeInteger(info.totalCount) ? info.totalCount === last.totalCount : null,
+      contradictoryExtraRows: validRows && rows.length > 0 && last.cumulativeItems >= last.totalCount,
       requests: config.requestBudget.used(),
       complete: false, countryCoverageVerified: false, watermarkAdvanced: false
     };
