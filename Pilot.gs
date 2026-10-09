@@ -150,6 +150,10 @@ function inspectTenderPilotPaginationConflict() {
       limit: TENDER_PILOT.pageSize, after: cursor
     });
     const rows = response.data.Lots, info = response.extensions && response.extensions.pageInfo;
+    // A GraphQL nullable list can be explicitly null, omitted, or a non-array type.
+    // Only log a fixed category; never serialize the untrusted response body.
+    const lotsResultKind = !Object.prototype.hasOwnProperty.call(response.data, 'Lots') ? 'missing' :
+      rows === null ? 'null' : Array.isArray(rows) ? 'array' : typeof rows;
     // The third page may have no pageInfo, or internally contradictory fields.
     // This is a READ-ONLY diagnostic, so report only whitelisted structural
     // evidence instead of throwing away the evidence. Never certify coverage.
@@ -186,7 +190,11 @@ function inspectTenderPilotPaginationConflict() {
       lastId: lastReturnedId, pageInfoLastId: infoLastId,
       hasNextPage: info && typeof info.hasNextPage === 'boolean' ? info.hasNextPage : null,
       totalCount: info && Number.isSafeInteger(info.totalCount) ? info.totalCount : null,
-      pageInfoIssues: pageInfoIssues,
+      pageInfoIssues: pageInfoIssues, lotsResultKind: lotsResultKind,
+      terminalNullCandidate: lotsResultKind === 'null' && !!info &&
+        info.limitPage === TENDER_PILOT.pageSize && info.hasNextPage === false &&
+        info.totalCount === last.totalCount && last.cumulativeItems === last.totalCount &&
+        info.lastId === 0,
       pageInfoPresent: !!info && typeof info === 'object' && !Array.isArray(info),
       extensionsPresent: !!response.extensions && typeof response.extensions === 'object',
       pageInfoLimitPage: info && Number.isSafeInteger(info.limitPage) ? info.limitPage : null,
