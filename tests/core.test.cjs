@@ -1023,6 +1023,47 @@ test('cursor lastId mismatch is visible in trace but never consumed', () => {
   assert.equal(h.fetchCalls.length, 1);
 });
 
+test('read-only filtered cursor probe records one contradictory extra page without advancing state', () => {
+  const {h} = pilotFixture();
+  // Populate the last pilot report via a real-shaped contradiction.
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
+  const first = h.c.runTenderBoundedPilot();
+  assert.equal(first.issue, 'PILOT_CURSOR_INVALID');
+  assert.equal(first.complete, false);
+  const baseline = json([...h.sheets].map(([name, sheet]) => [name, sheet.rows]));
+  const previousRequests = h.fetchCalls.length;
+  pilotResponse(h, 'Lots', [pilotRow(101)], {total: 1, next: false});
+  const result = h.c.inspectTenderPilotPaginationConflict();
+  assert.equal(result.mode, 'READ_ONLY_SINGLE_PAGE');
+  assert.equal(result.requestedAfter, 102);
+  assert.equal(result.nextPageReturned, 1);
+  assert.equal(result.contradictoryExtraRows, true);
+  assert.equal(result.priorTotalStillMatches, true);
+  assert.equal(result.descendingOrderValid, true);
+  assert.equal(result.complete, false);
+  assert.equal(result.watermarkAdvanced, false);
+  assert.equal(result.requests, 1);
+  assert.equal(h.fetchCalls.length, previousRequests + 1);
+  assert.deepEqual(json([...h.sheets].map(([name, sheet]) => [name, sheet.rows])), baseline);
+  assert.equal(h.triggers.length, 0);
+});
+
+test('read-only filtered cursor probe rejects unsuitable or unverified reports before HTTP', () => {
+  const {h} = pilotFixture();
+  const baseline = h.fetchCalls.length;
+  assert.throws(() => h.c.inspectTenderPilotPaginationConflict(), /PILOT_CURSOR_PROBE_REPORT_REQUIRED/);
+  assert.equal(h.fetchCalls.length, baseline);
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', []);
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', []);
+  h.c.runTenderBoundedPilot();
+  const requests = h.fetchCalls.length;
+  assert.throws(() => h.c.inspectTenderPilotPaginationConflict(), /PILOT_CURSOR_PROBE_NOT_APPLICABLE/);
+  assert.equal(h.fetchCalls.length, requests);
+});
+
 test('global or changing filtered totalCount is not accepted as complete coverage', () => {
   const {h, config} = pilotFixture();
   pilotResponse(h, 'Lots', [pilotRow()], {total: 32440437});
