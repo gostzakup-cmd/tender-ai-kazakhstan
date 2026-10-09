@@ -118,7 +118,7 @@ function inspectTenderPilotPaginationConflict() {
     }
     let previous;
     try {
-      previous = JSON.parse(sheet.getRange(sheet.getLastRow(), 2).getValue());
+      previous = JSON.parse(sheet.getRange(sheet.getLastRow(), 2, 1, 1).getValues()[0][0]);
     } catch (e) { throw safeApiError_('PILOT_CURSOR_PROBE_REPORT_INVALID'); }
     const stream = previous && Array.isArray(previous.streams) &&
       previous.streams.find(function (s) { return s && s.name === 'Lots.lastUpdateDate' && s.complete === false; });
