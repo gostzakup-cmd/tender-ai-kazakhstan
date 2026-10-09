@@ -86,6 +86,29 @@ function pilotScan_(config, root, filter, fields, consume, report) {
       report.complete = true;
       return;
     }
+    // The Plans ID lookup has the same nullable GraphQL list shape as Lots.
+    // A first-page explicit null is accepted as an EMPTY answer only with
+    // the exact zero-result terminal pageInfo. No missing or ambiguous
+    // plan can ever become confirmed goods evidence through this path.
+    if (root === 'Plans' && filter && Object.keys(filter).length === 1 &&
+        Array.isArray(filter.id) && filter.id.length > 0 &&
+        filter.id.length <= TENDER_PILOT.pageSize &&
+        filter.id.every(function (id) { return Number.isInteger(id) && id > 0 && id <= 2147483647; }) &&
+        after === null && seen === 0 && total === null &&
+        Object.prototype.hasOwnProperty.call(response.data, 'Plans') &&
+        rows === null && info && typeof info === 'object' && !Array.isArray(info) &&
+        info.limitPage === TENDER_PILOT.pageSize &&
+        info.totalCount === 0 && info.hasNextPage === false && info.lastId === 0) {
+      report.pages = 1;
+      report.items = 0;
+      report.reportedTotal = 0;
+      report.pageTrace.push({after: null, returned: 0, firstId: null,
+        lastRowId: null, pageInfoLastId: 0, hasNextPage: false,
+        cumulativeItems: 0, totalCount: 0, emptyNull: true});
+      report.emptyNullConfirmed = true;
+      report.complete = true;
+      return;
+    }
     // Observed on real OWS Lots pages: exactly totalCount rows can still have
     // hasNextPage=true; an additional page returns data.Lots=null and lastId=0.
     // Only a strictly matching terminal marker after the exact counted rows
@@ -108,7 +131,26 @@ function pilotScan_(config, root, filter, fields, consume, report) {
     if (!Array.isArray(rows) || rows.length > TENDER_PILOT.pageSize || !info ||
         info.limitPage !== TENDER_PILOT.pageSize || typeof info.hasNextPage !== 'boolean' ||
         !Number.isInteger(info.totalCount) || info.totalCount < 0 ||
-        (total !== null && total !== info.totalCount)) throw safeApiError_('PILOT_PAGE_INFO_UNVERIFIED');
+        (total !== null && total !== info.totalCount)) {
+      // Whitelisted structural evidence only, with no raw Plans records,
+      // query ID values, token, or server error text.
+      if (root === 'Plans') {
+        report.invalidPage = {
+          afterPresent: after !== null,
+          resultKind: !Object.prototype.hasOwnProperty.call(response.data, root) ? 'missing' :
+            rows === null ? 'null' : Array.isArray(rows) ? 'array' : typeof rows,
+          returned: Array.isArray(rows) ? rows.length : null,
+          pageInfoPresent: !!info && typeof info === 'object' && !Array.isArray(info),
+          limitPage: info && Number.isSafeInteger(info.limitPage) ? info.limitPage : null,
+          hasNextPage: info && typeof info.hasNextPage === 'boolean' ? info.hasNextPage : null,
+          totalCount: info && Number.isSafeInteger(info.totalCount) ? info.totalCount : null,
+          lastId: info && Number.isSafeInteger(info.lastId) ? info.lastId : null,
+          limitPageType: info ? typeof info.limitPage : 'missing',
+          totalCountType: info ? typeof info.totalCount : 'missing'
+        };
+      }
+      throw safeApiError_('PILOT_PAGE_INFO_UNVERIFIED');
+    }
     total = info.totalCount;
     let last = after;
     rows.forEach(function (row) {
@@ -361,7 +403,7 @@ function pilotWithin_(raw, config, window) {
 }
 
 /** Recover subject evidence only by explicit pointList IDs, never from a lot number. */
-function pilotResolvePlans_(rows, config, cache) {
+function pilotResolvePlans_(rows, config, cache, traces) {
   const needed = new Set();
   rows.forEach(function (row) {
     if (row.isDeleted !== 0 || !Array.isArray(row.pointList)) return;
@@ -375,13 +417,14 @@ function pilotResolvePlans_(rows, config, cache) {
   const allowed = ids.slice(0, Math.max(0, TENDER_PILOT.maxPlanIds - cache.size));
   for (let offset = 0; offset < allowed.length; offset += TENDER_PILOT.pageSize) {
     const batch = allowed.slice(offset, offset + TENDER_PILOT.pageSize);
-    const result = [];
+    const result = [], trace = {batchSize: batch.length};
+    if (Array.isArray(traces)) traces.push(trace);
     pilotScan_(config, 'Plans', {id: batch}, 'id refSubjectTypeId', function (plans) {
       plans.forEach(function (p) {
         if (!batch.includes(p.id) || !Number.isInteger(p.refSubjectTypeId)) throw safeApiError_('PILOT_PLAN_RESPONSE_INVALID');
         result.push(p);
       });
-    }, {});
+    }, trace);
     batch.forEach(function (id) { cache.set(id, result.find(function (p) { return p.id === id; }) || null); });
   }
   return rows.map(function (row) {
@@ -545,8 +588,11 @@ function runTenderBoundedPilot() {
         }, stats);
       });
       const rows = Array.from(items.values());
+      report.planLookups = [];
       for (let i = 0; i < rows.length; i += TENDER_PILOT.pageSize) {
-        pilotResolvePlans_(rows.slice(i, i + TENDER_PILOT.pageSize), config, plans).forEach(function (row) { items.set(sourceId_(row.id), row); });
+        pilotResolvePlans_(rows.slice(i, i + TENDER_PILOT.pageSize), config, plans, report.planLookups).forEach(function (row) {
+          items.set(sourceId_(row.id), row);
+        });
       }
       report.complete = !report.sourceChangedDuringRun;
     } catch (e) { report.issue = e.tenderSafeMessage ? e.tenderSafeMessage.split(':')[0] : 'PILOT_OPERATION_FAILED'; }
