@@ -1136,12 +1136,33 @@ test('bad publication date is quarantined and never called a new publication', (
   assert.equal(data(h, 'PILOT_EVENTS')[0][2], 'FIRST_OBSERVED');
 });
 
-test('targeted valid sample does not suppress normalization failures in registry probe', () => {
-  const {h} = pilotFixture(); h.properties.set('GOSZAKUP_DIAGNOSTIC_LOT_IDS', '[43495954]');
+test('missing Plans in registry samples are quarantined; verified goods permit bounded pilot only', () => {
+  const {h, config} = pilotFixture(); h.properties.set('GOSZAKUP_DIAGNOSTIC_LOT_IDS', '[43495954]');
   graphResponse(h, introspectionFromOfficialSdl());
   graphResponse(h, {Lots: [v3Lot(102, {Plans: []})]}); graphResponse(h, {Lots: []});
   graphResponse(h, {Lots: [v3Lot(43495954)]});
   const report = h.c.testGoszakupV3Connection();
-  assert.equal(report.mvpReady, false); assert.equal(h.properties.has('TENDER_V3_VERIFIED_CONFIG'), false);
-  assert.ok(report.normalizationErrors.includes('API_LOT_SUBJECT_TYPE_UNVERIFIED'));
+  assert.equal(report.mvpReady, true);
+  assert.equal(report.subjectTypeQuarantineSamples, 1);
+  assert.deepEqual(json(report.subjectTypeQuarantineIds), [102]);
+  assert.deepEqual(json(report.normalizationErrors), []);
+  assert.equal(report.eligibleNormalizedSamples, 1);
+  assert.equal(report.boundedPilotOnly, true);
+  assert.equal(report.fullCountryCoverageVerified, false);
+  assert.equal(h.properties.get('TENDER_V3_VERIFIED_CONFIG'), config.fingerprint);
+  assert.throws(() => h.c.syncTenderLots(), /FULL_SCAN_DISABLED/);
+  assert.throws(() => h.c.installDailyTrigger(), /FULL_SCAN_DISABLED/);
+  assert.equal(h.triggers.length, 0);
+});
+
+test('invalid goods dates still block readiness even when another sample normalizes', () => {
+  const {h} = pilotFixture();
+  graphResponse(h, introspectionFromOfficialSdl());
+  graphResponse(h, {Lots: [v3Lot(102, {TrdBuy: {...v3Lot().TrdBuy, publishDate: 'BAD_DATE'}})]});
+  graphResponse(h, {Lots: [v3Lot(101)]});
+  const report = h.c.testGoszakupV3Connection();
+  assert.equal(report.mvpReady, false);
+  assert.ok(report.normalizationErrors.includes('API_SOURCE_DATE_INVALID'));
+  assert.equal(report.subjectTypeQuarantineSamples, 0);
+  assert.equal(h.properties.has('TENDER_V3_VERIFIED_CONFIG'), false);
 });
