@@ -1015,6 +1015,81 @@ test('contradictory filtered pageInfo retains safe cursor evidence and still blo
   assert.ok(!JSON.stringify(report).includes('TEST_ONLY_SECRET'));
 });
 
+test('zero-result Lots.indexDate explicit null terminal marker completes only this stream', () => {
+  const {h, config} = pilotFixture(), report = {}, consumed = [];
+  rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0
+  }}});
+  h.c.pilotScan_(config, 'Lots', {indexDate: ['2026-10-08 07:00:00', '2026-10-08 07:59:00']},
+    'id', rows => consumed.push(...rows), report);
+  assert.equal(report.complete, true);
+  assert.equal(report.emptyNullConfirmed, true);
+  assert.equal(report.pages, 1);
+  assert.equal(report.items, 0);
+  assert.equal(report.reportedTotal, 0);
+  assert.equal(report.pageTrace[0].emptyNull, true);
+  assert.equal(consumed.length, 0);
+  assert.equal(h.fetchCalls.length, 1);
+});
+
+test('initial Lots.indexDate null with incompatible metadata fails closed', () => {
+  const invalid = [
+    {data: {}, extensions: {pageInfo: {limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0}}},
+    {data: {Lots: null}, extensions: {pageInfo: {limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0}}},
+    {data: {Lots: null}, extensions: {pageInfo: {limitPage: 20, totalCount: 0, hasNextPage: true, lastId: 0}}},
+    {data: {Lots: null}, extensions: {pageInfo: {limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 12}}},
+    {data: {Lots: null}, extensions: {pageInfo: {limitPage: 21, totalCount: 0, hasNextPage: false, lastId: 0}}},
+    {data: {Lots: null}},
+  ];
+  for (const sample of invalid) {
+    const {h, config} = pilotFixture(), report = {};
+    rawResponse(h, sample);
+    assert.throws(() => h.c.pilotScan_(config, 'Lots',
+      {indexDate: ['2026-10-08 07:00:00', '2026-10-08 07:59:00']},
+      'id', () => {}, report), /PILOT_PAGE_INFO_UNVERIFIED/);
+    assert.equal(report.complete, false);
+    assert.equal(report.emptyNullConfirmed, undefined);
+    assert.equal(h.fetchCalls.length, 1);
+  }
+});
+
+test('zero-result null is not accepted for other streams or filters', () => {
+  for (const [root, filter] of [
+    ['Lots', {lastUpdateDate: ['2026-10-08 07:00:00', '2026-10-08 07:59:00']}],
+    ['Lots', {trdBuyId: [555]}],
+    ['TrdBuy', {indexDate: ['2026-10-08 07:00:00', '2026-10-08 07:59:00']}]
+  ]) {
+    const {h, config} = pilotFixture(), stats = {};
+    rawResponse(h, {data: {[root]: null}, extensions: {pageInfo: {
+      limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0
+    }}});
+    assert.throws(() => h.c.pilotScan_(config, root, filter, 'id', () => {}, stats),
+      /PILOT_PAGE_INFO_UNVERIFIED/);
+    assert.equal(stats.complete, false);
+    assert.equal(h.fetchCalls.length, 1);
+  }
+});
+
+test('zero-result indexDate null lets bounded pilot finish without enabling full sync', () => {
+  const {h} = pilotFixture();
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', []);
+  pilotResponse(h, 'TrdBuy', []);
+  rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0
+  }}});
+  const report = h.c.runTenderBoundedPilot();
+  assert.equal(report.complete, true);
+  assert.equal(report.streams[3].emptyNullConfirmed, true);
+  assert.equal(report.streams[3].pages, 1);
+  assert.equal(report.countryCoverageVerified, false);
+  assert.equal(report.dailyCoverageVerified, false);
+  assert.equal(report.watermarkAdvanced, false);
+  assert.equal(report.mvpReady, false);
+  assert.equal(h.properties.has('TENDER_SYNC_STATE'), false);
+  assert.equal(h.triggers.length, 0);
+});
+
 test('real-shaped Lots terminal null after exact total confirms only filtered stream completion', () => {
   const {h, config} = pilotFixture(), stats = {}, values = [];
   pilotResponse(h, 'Lots', [pilotRow(102)], {total: 2, next: true});
