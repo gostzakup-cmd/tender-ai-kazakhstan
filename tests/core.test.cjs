@@ -1011,6 +1011,79 @@ test('contradictory filtered pageInfo retains safe cursor evidence and still blo
   assert.ok(!JSON.stringify(report).includes('TEST_ONLY_SECRET'));
 });
 
+test('real-shaped Lots terminal null after exact total confirms only filtered stream completion', () => {
+  const {h, config} = pilotFixture(), stats = {}, values = [];
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 2, next: true});
+  pilotResponse(h, 'Lots', [pilotRow(101)], {total: 2, next: true});
+  rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 2, hasNextPage: false, lastId: 0
+  }}});
+  h.c.pilotScan_(config, 'Lots', {lastUpdateDate: ['2026-10-08 07:00:00', '2026-10-08 07:59:00']},
+    'id', rows => values.push(...rows), stats);
+  assert.deepEqual(json(values.map(x => x.id)), [102, 101]);
+  assert.equal(stats.complete, true);
+  assert.equal(stats.pages, 3);
+  assert.equal(stats.items, 2);
+  assert.equal(stats.terminalNullConfirmed, true);
+  assert.deepEqual(json(stats.pageTrace[2]), {
+    after: 101, returned: 0, firstId: null, lastRowId: null,
+    pageInfoLastId: 0, hasNextPage: false, cumulativeItems: 2,
+    totalCount: 2, terminalNull: true
+  });
+  assert.equal(h.fetchCalls.length, 3);
+});
+
+test('Lots terminal null marker mismatches fail closed after exact total', () => {
+  const invalid = [
+    {data: {}, extensions: {pageInfo: {limitPage: 20, totalCount: 2, hasNextPage: false, lastId: 0}}},
+    {data: {Lots: []}, extensions: {pageInfo: {limitPage: 20, totalCount: 2, hasNextPage: false, lastId: 0}}},
+    {data: {Lots: [pilotRow(100)]}, extensions: {pageInfo: {limitPage: 20, totalCount: 2, hasNextPage: false, lastId: 0}}},
+    {data: {Lots: null}, extensions: {pageInfo: {limitPage: 20, totalCount: 3, hasNextPage: false, lastId: 0}}},
+    {data: {Lots: null}, extensions: {pageInfo: {limitPage: 20, totalCount: 2, hasNextPage: true, lastId: 0}}},
+    {data: {Lots: null}, extensions: {pageInfo: {limitPage: 20, totalCount: 2, hasNextPage: false, lastId: 101}}},
+    {data: {Lots: null}, extensions: {pageInfo: {limitPage: 21, totalCount: 2, hasNextPage: false, lastId: 0}}},
+  ];
+  for (const response of invalid) {
+    const {h, config} = pilotFixture(), stats = {};
+    pilotResponse(h, 'Lots', [pilotRow(102)], {total: 2, next: true});
+    pilotResponse(h, 'Lots', [pilotRow(101)], {total: 2, next: true});
+    rawResponse(h, response);
+    assert.throws(() => h.c.pilotScan_(config, 'Lots', {}, 'id', () => {}, stats), /PILOT_TERMINAL_PAGE_UNVERIFIED/);
+    assert.equal(stats.complete, false);
+    assert.equal(stats.terminalNullConfirmed, undefined);
+    assert.equal(h.fetchCalls.length, 3);
+  }
+});
+
+test('TrdBuy never accepts Lots-specific terminal null marker', () => {
+  const {h, config} = pilotFixture(), stats = {};
+  pilotResponse(h, 'TrdBuy', [{id: 555, publishDate: '2026-10-08 07:00:00'}], {total: 1, next: true});
+  assert.throws(() => h.c.pilotScan_(config, 'TrdBuy', {}, 'id', () => {}, stats),
+    /PILOT_CURSOR_INVALID/);
+  assert.equal(h.fetchCalls.length, 1);
+  assert.equal(stats.complete, false);
+});
+
+test('terminal null confirmation does not change production watermark or schedule', () => {
+  const {h} = pilotFixture();
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
+  rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0
+  }}});
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', []);
+  const report = h.c.runTenderBoundedPilot();
+  assert.equal(report.complete, true);
+  assert.equal(report.streams[1].terminalNullConfirmed, true);
+  assert.equal(report.countryCoverageVerified, false);
+  assert.equal(report.dailyCoverageVerified, false);
+  assert.equal(report.watermarkAdvanced, false);
+  assert.equal(report.mvpReady, false);
+  assert.equal(h.properties.has('TENDER_SYNC_STATE'), false);
+  assert.equal(h.triggers.length, 0);
+});
+
 test('cursor lastId mismatch is visible in trace but never consumed', () => {
   const {h, config} = pilotFixture(), report = {};
   pilotResponse(h, 'Lots', [pilotRow(102)], {total: 3, next: true, lastId: 999});
