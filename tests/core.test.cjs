@@ -1015,6 +1015,76 @@ test('contradictory filtered pageInfo retains safe cursor evidence and still blo
   assert.ok(!JSON.stringify(report).includes('TEST_ONLY_SECRET'));
 });
 
+test('Plans lookup accepts only exact zero-result null and keeps plan evidence quarantined', () => {
+  const {h, config} = pilotFixture(), trace = [];
+  const row = pilotRow(102, {Plans: [], pointList: [777], isDeleted: 0});
+  rawResponse(h, {data: {Plans: null}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0
+  }}});
+  const result = h.c.pilotResolvePlans_([row], config, new Map(), trace);
+  assert.equal(result.length, 1);
+  assert.deepEqual(json(result[0].Plans), []);
+  assert.equal(h.c.pilotClassify_(result[0], config).kind, 'QUARANTINE');
+  assert.equal(trace.length, 1);
+  assert.equal(trace[0].complete, true);
+  assert.equal(trace[0].emptyNullConfirmed, true);
+  assert.equal(trace[0].reportedTotal, 0);
+  assert.equal(h.fetchCalls.length, 1);
+});
+
+test('Plans null with positive count or invalid pageInfo fails closed with structural-only trace', () => {
+  for (const p of [
+    {limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0},
+    {limitPage: 20, totalCount: 0, hasNextPage: true, lastId: 0},
+    {limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 1},
+    {limitPage: 21, totalCount: 0, hasNextPage: false, lastId: 0}
+  ]) {
+    const {h, config} = pilotFixture(), trace = [];
+    rawResponse(h, {data: {Plans: null}, extensions: {pageInfo: p}});
+    assert.throws(() => h.c.pilotResolvePlans_([
+      pilotRow(102, {Plans: [], pointList: [777], isDeleted: 0})
+    ], config, new Map(), trace), /PILOT_PAGE_INFO_UNVERIFIED/);
+    assert.equal(trace[0].complete, false);
+    assert.equal(trace[0].invalidPage.resultKind, 'null');
+    assert.equal(trace[0].invalidPage.totalCount, p.totalCount);
+    assert.equal(h.fetchCalls.length, 1);
+    assert.equal(JSON.stringify(trace).includes('777'), false);
+  }
+});
+
+test('Plans missing property is not accepted as a zero-result null', () => {
+  const {h, config} = pilotFixture(), trace = [];
+  rawResponse(h, {data: {}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0
+  }}});
+  assert.throws(() => h.c.pilotResolvePlans_([
+    pilotRow(102, {Plans: [], pointList: [777], isDeleted: 0})
+  ], config, new Map(), trace), /PILOT_PAGE_INFO_UNVERIFIED/);
+  assert.equal(trace[0].invalidPage.resultKind, 'missing');
+});
+
+test('full pilot with exact zero-null Plans page completes bounded streams without claiming production readiness', () => {
+  const {h} = pilotFixture();
+  const row = pilotRow(102, {Plans: [], pointList: [777], isDeleted: 0});
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', [row]);
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', []);
+  rawResponse(h, {data: {Plans: null}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0
+  }}});
+  const report = h.c.runTenderBoundedPilot();
+  assert.equal(report.complete, true);
+  assert.equal(report.planLookups.length, 1);
+  assert.equal(report.planLookups[0].emptyNullConfirmed, true);
+  assert.equal(report.countryCoverageVerified, false);
+  assert.equal(report.dailyCoverageVerified, false);
+  assert.equal(report.watermarkAdvanced, false);
+  assert.equal(report.mvpReady, false);
+  assert.equal(report.quarantineCount, 1);
+  assert.equal(h.triggers.length, 0);
+});
+
 test('zero-result Lots.indexDate explicit null terminal marker completes only this stream', () => {
   const {h, config} = pilotFixture(), report = {}, consumed = [];
   rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
