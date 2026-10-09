@@ -247,7 +247,8 @@ function runTenderBoundedPilot() {
     if (sheets.PILOT_RUNS.getLastRow() >= TENDER_PILOT.maxRows + 1) throw safeApiError_('PILOT_STORAGE_LIMIT');
     config.requestBudget = pilotBudget_();
     const items = new Map(), plans = new Map();
-    const report = {from: window.from, to: window.to, streams: [], complete: false,
+    const report = {from: window.from, to: window.to, sourceDateTimezone: config.dateTimezone,
+      displayTimezone: 'Asia/Almaty', displayUtcOffset: '+05:00', streams: [], complete: false,
       countryCoverageVerified: false, dailyCoverageVerified: false, watermarkAdvanced: false, mvpReady: false};
     const fields = selection_(Object.assign({}, config.fields, {plannedMethod: 'refTradeMethodsId', actualMethod: 'refBuyTradeMethodsId',
       lotUpdated: 'lastUpdateDate', lotIndexed: 'indexDate'}));
