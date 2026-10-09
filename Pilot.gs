@@ -151,7 +151,7 @@ function inspectTenderPilotPaginationConflict() {
     // Probe only this specific confirmed contradiction, never a guessed ID.
     if (previous.from !== window.from || previous.to !== window.to ||
         previous.sourceDateTimezone !== config.dateTimezone ||
-        previous.issue !== 'PILOT_CURSOR_INVALID' || !last ||
+        !['PILOT_CURSOR_INVALID', 'PILOT_TERMINAL_PAGE_UNVERIFIED'].includes(previous.issue) || !last ||
         last.hasNextPage !== true || last.cumulativeItems !== last.totalCount ||
         last.lastRowId !== last.pageInfoLastId || !Number.isSafeInteger(cursor) ||
         cursor < 1 || cursor > 2147483647 || !Number.isSafeInteger(last.totalCount) ||
