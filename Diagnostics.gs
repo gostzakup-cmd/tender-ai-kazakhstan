@@ -149,15 +149,22 @@ function testGoszakupV3Connection() {
     }
     const issues = v3RuntimeIssues_(config);
     if (!first.paginationVerified || !second.paginationVerified) issues.push('V3_PAGE_INFO_UNVERIFIED');
-    let eligibleSamples = 0;
-    const normalizationErrors = [];
+    let eligibleSamples = 0, subjectTypeQuarantineSamples = 0;
+    const subjectTypeQuarantineIds = [], normalizationErrors = [];
     if (!issues.length) items.concat(targetedItems).forEach(function (item) {
       try {
         const result = normalizeV3Lot_(item, config);
         if (result.lot) eligibleSamples += 1;
       } catch (error) {
         const code = (error.tenderSafeMessage || 'NORMALIZATION_FAILED').split(':')[0];
-        if (!normalizationErrors.includes(code)) normalizationErrors.push(code);
+        // A missing/ambiguous Plans relation is normal in public registry pages.
+        // Pilot.gs treats such records as QUARANTINE, never as eligible goods.
+        // All other normalization failures still block the readiness proof.
+        if (code === 'API_LOT_SUBJECT_TYPE_UNVERIFIED') {
+          subjectTypeQuarantineSamples += 1;
+          const id = item && item.id;
+          if (Number.isInteger(id) && subjectTypeQuarantineIds.length < 10) subjectTypeQuarantineIds.push(id);
+        } else if (!normalizationErrors.includes(code)) normalizationErrors.push(code);
       }
     });
     const ready = !issues.length && !normalizationErrors.length && eligibleSamples > 0;
@@ -190,8 +197,9 @@ function testGoszakupV3Connection() {
         return {hasNextPage: p.hasNextPage, lastId: p.lastId, totalCount: p.totalCount, limitPage: p.limitPage};
       }),
       eligibleNormalizedSamples: eligibleSamples, configurationIssues: issues,
-      normalizationErrors: normalizationErrors, samples: samples,
-      fullCountryCoverageVerified: false, actualDailyTriggerVerified: false
+      normalizationErrors: normalizationErrors, subjectTypeQuarantineSamples: subjectTypeQuarantineSamples,
+      subjectTypeQuarantineIds: subjectTypeQuarantineIds, samples: samples,
+      boundedPilotOnly: true, fullCountryCoverageVerified: false, actualDailyTriggerVerified: false
     };
     // Whitelist выше + редактирование возможного отражения секрета в строковых полях.
     const safeJson = JSON.stringify(report).split(token).join('[REDACTED]');
