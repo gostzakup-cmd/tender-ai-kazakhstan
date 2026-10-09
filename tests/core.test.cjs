@@ -996,18 +996,22 @@ test('contradictory filtered pageInfo retains safe cursor evidence and still blo
   const {h, config} = pilotFixture(), report = {};
   pilotResponse(h, 'Lots', [pilotRow(102)], {total: 2, next: true});
   pilotResponse(h, 'Lots', [pilotRow(101)], {total: 2, next: true});
+  rawResponse(h, {data: {Lots: []}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 2, hasNextPage: false, lastId: 0
+  }}});
   assert.throws(() => h.c.pilotScan_(config, 'Lots', {lastUpdateDate: ['2026-10-08 07:00:00', '2026-10-08 07:59:00']},
-    'id', () => {}, report), /PILOT_CURSOR_INVALID/);
+    'id', () => {}, report), /PILOT_TERMINAL_PAGE_UNVERIFIED/);
   assert.equal(report.complete, false);
   assert.equal(report.pages, 2);
   assert.equal(report.items, 2);
+  assert.equal(report.pages, 2);
   assert.deepEqual(json(report.pageTrace), [
     {after: null, returned: 1, firstId: 102, lastRowId: 102, pageInfoLastId: 102,
       hasNextPage: true, cumulativeItems: 1, totalCount: 2},
     {after: 102, returned: 1, firstId: 101, lastRowId: 101, pageInfoLastId: 101,
       hasNextPage: true, cumulativeItems: 2, totalCount: 2}
   ]);
-  assert.equal(h.fetchCalls.length, 2);
+  assert.equal(h.fetchCalls.length, 3);
   assert.ok(!JSON.stringify(report).includes('TEST_ONLY_SECRET'));
 });
 
@@ -1101,8 +1105,11 @@ test('read-only filtered cursor probe records one contradictory extra page witho
   // Populate the last pilot report via a real-shaped contradiction.
   pilotResponse(h, 'TrdBuy', []);
   pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
+  rawResponse(h, {data: {Lots: []}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0
+  }}});
   const first = h.c.runTenderBoundedPilot();
-  assert.equal(first.issue, 'PILOT_CURSOR_INVALID');
+  assert.equal(first.issue, 'PILOT_TERMINAL_PAGE_UNVERIFIED');
   assert.equal(first.complete, false);
   const baseline = json([...h.sheets].map(([name, sheet]) => [name, sheet.rows]));
   const previousRequests = h.fetchCalls.length;
@@ -1126,8 +1133,11 @@ test('read-only cursor probe returns safe evidence when pageInfo is missing', ()
   const {h} = pilotFixture();
   pilotResponse(h, 'TrdBuy', []);
   pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
+  rawResponse(h, {data: {Lots: []}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0
+  }}});
   const first = h.c.runTenderBoundedPilot();
-  assert.equal(first.issue, 'PILOT_CURSOR_INVALID');
+  assert.equal(first.issue, 'PILOT_TERMINAL_PAGE_UNVERIFIED');
   const original = json([...h.sheets].map(([name, sheet]) => [name, sheet.rows]));
   const calls = h.fetchCalls.length;
   rawResponse(h, {data: {Lots: []}});
@@ -1147,7 +1157,10 @@ test('read-only cursor probe classifies null terminal marker without confirming 
   const {h} = pilotFixture();
   pilotResponse(h, 'TrdBuy', []);
   pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
-  assert.equal(h.c.runTenderBoundedPilot().issue, 'PILOT_CURSOR_INVALID');
+  rawResponse(h, {data: {Lots: []}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0
+  }}});
+  assert.equal(h.c.runTenderBoundedPilot().issue, 'PILOT_TERMINAL_PAGE_UNVERIFIED');
   const before = json([...h.sheets].map(([name, sheet]) => [name, sheet.rows]));
   rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
     limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0
@@ -1166,7 +1179,10 @@ test('read-only cursor probe distinguishes missing Lots from explicit null', () 
   const {h} = pilotFixture();
   pilotResponse(h, 'TrdBuy', []);
   pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
-  assert.equal(h.c.runTenderBoundedPilot().issue, 'PILOT_CURSOR_INVALID');
+  rawResponse(h, {data: {Lots: []}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0
+  }}});
+  assert.equal(h.c.runTenderBoundedPilot().issue, 'PILOT_TERMINAL_PAGE_UNVERIFIED');
   rawResponse(h, {data: {}, extensions: {pageInfo: {limitPage: 20, totalCount: 1,
     hasNextPage: false, lastId: 0}}});
   const result = h.c.inspectTenderPilotPaginationConflict();
@@ -1179,7 +1195,10 @@ test('read-only cursor probe reports malformed pageInfo fields without weakening
   const {h} = pilotFixture();
   pilotResponse(h, 'TrdBuy', []);
   pilotResponse(h, 'Lots', [pilotRow(102)], {total: 1, next: true});
-  assert.equal(h.c.runTenderBoundedPilot().issue, 'PILOT_CURSOR_INVALID');
+  rawResponse(h, {data: {Lots: []}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 1, hasNextPage: false, lastId: 0
+  }}});
+  assert.equal(h.c.runTenderBoundedPilot().issue, 'PILOT_TERMINAL_PAGE_UNVERIFIED');
   rawResponse(h, {data: {Lots: []}, extensions: {pageInfo: {
     limitPage: null, totalCount: '1', hasNextPage: 'false', lastId: null
   }}});
