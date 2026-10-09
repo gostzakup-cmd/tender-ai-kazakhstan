@@ -64,6 +64,28 @@ function pilotScan_(config, root, filter, fields, consume, report) {
   while (true) {
     const response = graphqlResponse_(config, query, {filter: filter, limit: TENDER_PILOT.pageSize, after: after});
     const rows = response.data[root], info = response.extensions && response.extensions.pageInfo;
+    // Real filtered Lots.indexDate in the owner's one-minute window returned
+    // explicitly null for zero results (not an empty array). Accept only
+    // the first-page, exact zero-result terminal metadata for this stream.
+    // Other Lots filters and TrdBuy keep their existing strict behavior.
+    if (root === 'Lots' && Object.keys(filter).length === 1 &&
+        Object.prototype.hasOwnProperty.call(filter, 'indexDate') &&
+        Array.isArray(filter.indexDate) && filter.indexDate.length === 2 &&
+        after === null && seen === 0 && total === null &&
+        Object.prototype.hasOwnProperty.call(response.data, 'Lots') &&
+        rows === null && info && typeof info === 'object' && !Array.isArray(info) &&
+        info.limitPage === TENDER_PILOT.pageSize &&
+        info.totalCount === 0 && info.hasNextPage === false && info.lastId === 0) {
+      report.pages = 1;
+      report.items = 0;
+      report.reportedTotal = 0;
+      report.pageTrace.push({after: null, returned: 0, firstId: null,
+        lastRowId: null, pageInfoLastId: 0, hasNextPage: false,
+        cumulativeItems: 0, totalCount: 0, emptyNull: true});
+      report.emptyNullConfirmed = true;
+      report.complete = true;
+      return;
+    }
     // Observed on real OWS Lots pages: exactly totalCount rows can still have
     // hasNextPage=true; an additional page returns data.Lots=null and lastId=0.
     // Only a strictly matching terminal marker after the exact counted rows
