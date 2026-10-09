@@ -1292,8 +1292,10 @@ test('read-only indexDate probe distinguishes zero-result null marker and never 
   pilotResponse(h, 'TrdBuy', []);
   pilotResponse(h, 'Lots', []);
   pilotResponse(h, 'TrdBuy', []);
+  // Simulate an invalid initial response to preserve a report for the
+  // read-only diagnostic; a correct zero-null page now completes normally.
   rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
-    limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0
+    limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 9
   }}});
   const first = h.c.runTenderBoundedPilot();
   assert.equal(first.issue, 'PILOT_PAGE_INFO_UNVERIFIED');
