@@ -18,3 +18,10 @@
 
 ---
 Internal tracking: GitHub issue #6. Не угадывать зону по отображению портала. Ответ с датой и источником сохранить и проверить на реальных ID до настройки пилота. Никаких production triggers или watermark до подтверждения.
+
+## Official documentation cross-check (2026-10-09)
+- https://old.goszakup.gov.kz/ru/developer/ows_v3 — lists publishDate and lastUpdateDate filter semantics by field, without specifying a timezone.
+- https://ows.goszakup.gov.kz/help/v3/schema/trdbuyfiltersinput.doc.html — declares publishDate and lastUpdateDate as [String].
+- https://ows.goszakup.gov.kz/help/v3/schema/trdbuy.doc.html — declares date fields as String, without an offset contract.
+- https://ows.goszakup.gov.kz/help/ — current service help indicates contacting the Ministry of Finance of Kazakhstan for token authorization; this is not proof of a support mailbox for technical questions.
+**Result:** timezone, filter boundary inclusivity, update completeness and indexing lag remain UNVERIFIED. No token used in this documentation review.
