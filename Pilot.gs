@@ -236,6 +236,103 @@ function inspectTenderPilotPaginationConflict() {
   } finally { lock.releaseLock(); }
 }
 
+/**
+ * Manual ONE-request probe of the first Lots.indexDate page after the bounded
+ * pilot stops on PILOT_PAGE_INFO_UNVERIFIED before consuming that stream.
+ * This diagnostic does not update snapshots, events, production cursors or
+ * triggers. A quota entry is reserved for the one permitted API request.
+ */
+function inspectTenderPilotIndexDatePage() {
+  assertSheetsReady_();
+  const config = assertV3Ready_(), window = pilotWindow_(config);
+  if (JSON.stringify(config.fields) !== JSON.stringify(V3_FIELDS)) {
+    throw safeApiError_('PILOT_DEFAULT_MAPPING_REQUIRED');
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw safeApiError_('PILOT_ALREADY_RUNNING');
+  try {
+    const sheet = spreadsheet_().getSheetByName('PILOT_RUNS');
+    if (!sheet || sheet.getLastRow() < 2 ||
+        sheet.getRange(1, 1, 1, 2).getValues()[0].join('|') !== TENDER_PILOT.headers.PILOT_RUNS.join('|')) {
+      throw safeApiError_('PILOT_INDEX_PROBE_REPORT_REQUIRED');
+    }
+    let previous;
+    try {
+      previous = JSON.parse(sheet.getRange(sheet.getLastRow(), 2, 1, 1).getValues()[0][0]);
+    } catch (e) { throw safeApiError_('PILOT_INDEX_PROBE_REPORT_INVALID'); }
+    const streams = previous && previous.streams;
+    const last = Array.isArray(streams) && streams[streams.length - 1];
+    if (previous.from !== window.from || previous.to !== window.to ||
+        previous.sourceDateTimezone !== config.dateTimezone ||
+        previous.issue !== 'PILOT_PAGE_INFO_UNVERIFIED' || !last ||
+        last.name !== 'Lots.indexDate' || last.complete !== false ||
+        last.pages !== 0 || last.items !== 0 ||
+        !Array.isArray(last.pageTrace) || last.pageTrace.length !== 0) {
+      throw safeApiError_('PILOT_INDEX_PROBE_NOT_APPLICABLE');
+    }
+    config.requestBudget = pilotBudget_();
+    // Match the original pilot filter, variable types, and selected fields.
+    const fields = selection_(Object.assign({}, config.fields, {
+      plannedMethod: 'refTradeMethodsId', actualMethod: 'refBuyTradeMethodsId',
+      lotUpdated: 'lastUpdateDate', lotIndexed: 'indexDate'
+    }));
+    const query = 'query TenderPilot($filter: LotsFiltersInput!, $limit: Int!, $after: Int) { ' +
+      'Lots(filter: $filter, limit: $limit, after: $after) { ' + fields + ' } }';
+    const response = graphqlResponse_(config, query, {
+      filter: {indexDate: [window.from, window.to]},
+      limit: TENDER_PILOT.pageSize, after: null
+    });
+    const rows = response.data.Lots, info = response.extensions && response.extensions.pageInfo;
+    const lotsResultKind = !Object.prototype.hasOwnProperty.call(response.data, 'Lots') ? 'missing' :
+      rows === null ? 'null' : Array.isArray(rows) ? 'array' : typeof rows;
+    const issues = [];
+    if (!Array.isArray(rows)) issues.push('LOTS_NOT_ARRAY');
+    else if (rows.length > TENDER_PILOT.pageSize) issues.push('LOTS_PAGE_TOO_LARGE');
+    if (!info || typeof info !== 'object' || Array.isArray(info)) issues.push('PAGE_INFO_MISSING');
+    else {
+      if (info.limitPage !== TENDER_PILOT.pageSize) issues.push('LIMIT_PAGE_MISMATCH');
+      if (typeof info.hasNextPage !== 'boolean') issues.push('HAS_NEXT_PAGE_INVALID');
+      if (!Number.isSafeInteger(info.totalCount) || info.totalCount < 0) issues.push('TOTAL_COUNT_INVALID');
+    }
+    const ids = [];
+    if (Array.isArray(rows) && rows.length <= TENDER_PILOT.pageSize) {
+      rows.forEach(function (item) {
+        try {
+          const id = Number(sourceId_(item && item.id));
+          if (!Number.isSafeInteger(id) || id < 1 || id > 2147483647) throw new Error('id');
+          ids.push(id);
+        } catch (e) { issues.push('LOT_ID_INVALID'); }
+      });
+    }
+    const lastId = info && Number.isSafeInteger(info.lastId) ? info.lastId : null;
+    const pageInfoValid = issues.length === 0;
+    const report = {
+      mode: 'READ_ONLY_INDEX_FIRST_PAGE', from: window.from, to: window.to,
+      sourceDateTimezone: config.dateTimezone, stream: 'Lots.indexDate',
+      requestedAfter: null, lotsResultKind: lotsResultKind,
+      returned: Array.isArray(rows) && rows.length <= TENDER_PILOT.pageSize ? rows.length : null,
+      firstId: ids.length ? ids[0] : null, lastRowId: ids.length ? ids[ids.length - 1] : null,
+      pageInfoIssues: Array.from(new Set(issues)),
+      pageInfoPresent: !!info && typeof info === 'object' && !Array.isArray(info),
+      hasNextPage: info && typeof info.hasNextPage === 'boolean' ? info.hasNextPage : null,
+      totalCount: info && Number.isSafeInteger(info.totalCount) ? info.totalCount : null,
+      lastId: lastId,
+      limitPage: info && Number.isSafeInteger(info.limitPage) ? info.limitPage : null,
+      lastIdType: info ? typeof info.lastId : 'missing',
+      totalCountType: info ? typeof info.totalCount : 'missing',
+      emptyNullCandidate: lotsResultKind === 'null' && !!info &&
+        info.limitPage === TENDER_PILOT.pageSize && info.totalCount === 0 &&
+        info.hasNextPage === false && info.lastId === 0,
+      pageInfoStructurallyValid: pageInfoValid,
+      requests: config.requestBudget.used(),
+      complete: false, countryCoverageVerified: false,
+      dailyCoverageVerified: false, watermarkAdvanced: false
+    };
+    console.log(JSON.stringify(report));
+    return report;
+  } finally { lock.releaseLock(); }
+}
+
 function pilotWithin_(raw, config, window) {
   const instant = Date.parse(apiDate_(raw, config.dateTimezone, false));
   if (instant < window.start || instant > window.end) throw safeApiError_('PILOT_FILTER_RANGE_MISMATCH');
