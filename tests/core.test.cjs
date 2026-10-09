@@ -1624,3 +1624,46 @@ test('national gate refresh adds unknown lots and preserves manual evidence on r
   assert.equal(gate.rows[2][6], 'НЕ ПРОВЕРЕНО');
   assert.equal(h.triggers.length, 0);
 });
+
+test('national KTRU probe reads only exact three pilot goods and never grants a regime verdict', () => {
+  const h = harness(); h.setup();
+  const pilot = h.c.SpreadsheetApp.getActiveSpreadsheet().insertSheet('PILOT_LOTS');
+  pilot.appendRow(['LOT_ID','HASH','STATUS','CLASSIFICATION','PLANNED_METHOD_ID','ACTUAL_METHOD_ID','PUBLISHED_RAW','NORMALIZED_JSON','FIRST_OBSERVED','LAST_OBSERVED','REVISION']);
+  for (let n = 101; n <= 104; n++) {
+    pilot.appendRow([String(n),'hash','PublishedOfferAccept','ELIGIBLE_GOODS',3,3,'',
+      JSON.stringify(lot(String(n))),now,now,1]);
+  }
+  h.properties.set('GOSZAKUP_TOKEN','SYNTHETIC_TOKEN');
+  const before = json([...h.sheets].map(([name,s]) => [name,s.rows]));
+  h.responses.push({status:200,body:JSON.stringify({data:{Lots:[
+    {id:101,pointList:[22],Plans:[{id:22,refSubjectTypeId:1,refEnstruCode:'32.50.12.000'}]},
+    {id:102,pointList:[23],Plans:[{id:23,refSubjectTypeId:1,refEnstruCode:'33.12.45.120'}]},
+    {id:103,pointList:[24,25],Plans:[{id:24,refSubjectTypeId:1,refEnstruCode:'33.12.45.120'},{id:25,refSubjectTypeId:1,refEnstruCode:'45.12.54.001'}]}
+  ]}})});
+  const report=h.c.inspectTenderNationalKtru();
+  assert.equal(report.sampled,3);
+  assert.equal(report.candidates,4);
+  assert.equal(report.automaticallyDeterminedNationalRegime,0);
+  assert.equal(report.readyToSkip,false);
+  assert.deepEqual(json(report.items.map(v=>v.planCoverageVerified)),[true,true,true]);
+  assert.deepEqual(json(report.items[2].ktruCodes),['33.12.45.120','45.12.54.001']);
+  assert.equal(JSON.parse(h.fetchCalls[0].options.payload).variables.filter.id.join(','),'101,102,103');
+  assert.deepEqual(json([...h.sheets].map(([name,s]) => [name,s.rows])),before);
+  assert.equal(h.triggers.length,0);
+});
+
+test('national KTRU probe with incomplete plans remains UNVERIFIED and never mutates state', () => {
+  const h = harness(); h.setup();
+  const pilot = h.c.SpreadsheetApp.getActiveSpreadsheet().insertSheet('PILOT_LOTS');
+  pilot.appendRow(['LOT_ID','HASH','STATUS','CLASSIFICATION','PLANNED_METHOD_ID','ACTUAL_METHOD_ID','PUBLISHED_RAW','NORMALIZED_JSON','FIRST_OBSERVED','LAST_OBSERVED','REVISION']);
+  pilot.appendRow(['101','hash','PublishedOfferAccept','ELIGIBLE_GOODS',3,3,'',JSON.stringify(lot('101')),now,now,1]);
+  h.properties.set('GOSZAKUP_TOKEN','SYNTHETIC_TOKEN');
+  h.responses.push({status:200,body:JSON.stringify({data:{Lots:[
+    {id:101,pointList:[22,23],Plans:[{id:22,refSubjectTypeId:1,refEnstruCode:'11.22.33.444'}]}
+  ]}})});
+  const report=h.c.inspectTenderNationalKtru();
+  assert.equal(report.items[0].nationalRegime,'UNVERIFIED');
+  assert.equal(report.items[0].planCoverageVerified,false);
+  assert.deepEqual(json(report.items[0].ktruCodes),[]);
+  assert.equal(report.items[0].reason,'MISSING_LOT_OR_PLAN_COVERAGE');
+});
