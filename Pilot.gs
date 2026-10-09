@@ -59,6 +59,8 @@ function pilotScan_(config, root, filter, fields, consume, report) {
     root + '(filter: $filter, limit: $limit, after: $after) { ' + fields + ' } }';
   let after = null, direction = 0, total = null, seen = 0;
   report.complete = false; report.pages = 0; report.items = 0;
+  // Only structural pagination evidence (no raw responses or tokens); max 40 pages/run.
+  report.pageTrace = [];
   while (true) {
     const response = graphqlResponse_(config, query, {filter: filter, limit: TENDER_PILOT.pageSize, after: after});
     const rows = response.data[root], info = response.extensions && response.extensions.pageInfo;
@@ -79,6 +81,15 @@ function pilotScan_(config, root, filter, fields, consume, report) {
       last = id;
     });
     seen += rows.length; report.pages += 1; report.items = seen; report.reportedTotal = total;
+    // Record the final page *before* throwing on contradictory hasNextPage/lastId.
+    // This lets the owner distinguish a service count bug from a cursor mismatch
+    // without weakening any coverage checks or making extra API requests.
+    const infoLastId = typeof info.lastId === 'number' && Number.isSafeInteger(info.lastId) ? info.lastId :
+      typeof info.lastId === 'string' && /^\d{1,10}$/.test(info.lastId) ? Number(info.lastId) : null;
+    report.pageTrace.push({after: after, returned: rows.length,
+      firstId: rows.length ? Number(sourceId_(rows[0].id)) : null, lastRowId: rows.length ? last : null,
+      pageInfoLastId: infoLastId, hasNextPage: info.hasNextPage,
+      cumulativeItems: seen, totalCount: total});
     if (seen > total || (!info.hasNextPage && seen !== total)) throw safeApiError_('PILOT_COUNT_MISMATCH');
     if (info.hasNextPage && (!rows.length || Number(sourceId_(info.lastId)) !== last || last === after || seen >= total)) {
       throw safeApiError_('PILOT_CURSOR_INVALID');
