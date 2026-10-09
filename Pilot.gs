@@ -100,6 +100,86 @@ function pilotScan_(config, root, filter, fields, consume, report) {
   }
 }
 
+/**
+ * Manual, read-only probe of ONE page after a recorded filtered-pagination
+ * contradiction. Does not call pilotSave_, claim coverage, or advance cursors.
+ * The normal pilot still stops on PILOT_CURSOR_INVALID without this diagnostic.
+ */
+function inspectTenderPilotPaginationConflict() {
+  assertSheetsReady_();
+  const config = assertV3Ready_(), window = pilotWindow_(config);
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw safeApiError_('PILOT_ALREADY_RUNNING');
+  try {
+    const sheet = spreadsheet_().getSheetByName('PILOT_RUNS');
+    if (!sheet || sheet.getLastRow() < 2 ||
+        sheet.getRange(1, 1, 1, 2).getValues()[0].join('|') !== TENDER_PILOT.headers.PILOT_RUNS.join('|')) {
+      throw safeApiError_('PILOT_CURSOR_PROBE_REPORT_REQUIRED');
+    }
+    let previous;
+    try {
+      previous = JSON.parse(sheet.getRange(sheet.getLastRow(), 2, 1, 1).getValues()[0][0]);
+    } catch (e) { throw safeApiError_('PILOT_CURSOR_PROBE_REPORT_INVALID'); }
+    const stream = previous && Array.isArray(previous.streams) &&
+      previous.streams.find(function (s) { return s && s.name === 'Lots.lastUpdateDate' && s.complete === false; });
+    const trace = stream && Array.isArray(stream.pageTrace) && stream.pageTrace;
+    const last = trace && trace.length && trace[trace.length - 1];
+    const cursor = last && last.lastRowId;
+    // Probe only this specific confirmed contradiction, never a guessed ID.
+    if (previous.from !== window.from || previous.to !== window.to ||
+        previous.sourceDateTimezone !== config.dateTimezone ||
+        previous.issue !== 'PILOT_CURSOR_INVALID' || !last ||
+        last.hasNextPage !== true || last.cumulativeItems !== last.totalCount ||
+        last.lastRowId !== last.pageInfoLastId || !Number.isSafeInteger(cursor) ||
+        cursor < 1 || cursor > 2147483647 || !Number.isSafeInteger(last.totalCount) ||
+        last.totalCount < 1 || (last.after !== null && (!Number.isSafeInteger(last.after) ||
+        last.after < 1 || last.after === cursor))) {
+      throw safeApiError_('PILOT_CURSOR_PROBE_NOT_APPLICABLE');
+    }
+
+    // Same filter, limit and selection as the pilot; only 'after' differs.
+    config.requestBudget = pilotBudget_();
+    const fields = selection_(Object.assign({}, config.fields, {
+      plannedMethod: 'refTradeMethodsId', actualMethod: 'refBuyTradeMethodsId',
+      lotUpdated: 'lastUpdateDate', lotIndexed: 'indexDate'
+    }));
+    const query = 'query TenderPilot($filter: LotsFiltersInput!, $limit: Int!, $after: Int) { ' +
+      'Lots(filter: $filter, limit: $limit, after: $after) { ' + fields + ' } }';
+    const response = graphqlResponse_(config, query, {
+      filter: {lastUpdateDate: [window.from, window.to]},
+      limit: TENDER_PILOT.pageSize, after: cursor
+    });
+    const rows = response.data.Lots, info = response.extensions && response.extensions.pageInfo;
+    if (!Array.isArray(rows) || rows.length > TENDER_PILOT.pageSize || !info ||
+        info.limitPage !== TENDER_PILOT.pageSize || typeof info.hasNextPage !== 'boolean' ||
+        !Number.isSafeInteger(info.totalCount) || info.totalCount < 0) {
+      throw safeApiError_('PILOT_CURSOR_PROBE_PAGE_INFO_INVALID');
+    }
+    const ids = rows.map(function (row) { return Number(sourceId_(row.id)); });
+    const orderValid = ids.every(function (id, i) {
+      return Number.isSafeInteger(id) && id > 0 && id < (i ? ids[i - 1] : cursor);
+    });
+    const lastReturnedId = ids.length ? ids[ids.length - 1] : null;
+    const infoLastId = info.lastId == null ? null : Number(sourceId_(info.lastId));
+    const report = {
+      mode: 'READ_ONLY_SINGLE_PAGE', from: window.from, to: window.to,
+      sourceDateTimezone: config.dateTimezone, stream: 'Lots.lastUpdateDate',
+      requestedAfter: cursor, priorReportedTotal: last.totalCount,
+      priorCumulativeItems: last.cumulativeItems,
+      nextPageReturned: rows.length, firstId: ids.length ? ids[0] : null,
+      lastId: lastReturnedId, pageInfoLastId: infoLastId,
+      hasNextPage: info.hasNextPage, totalCount: info.totalCount,
+      descendingOrderValid: orderValid, lastIdMatches: lastReturnedId === infoLastId,
+      priorTotalStillMatches: info.totalCount === last.totalCount,
+      contradictoryExtraRows: rows.length > 0 && last.cumulativeItems >= last.totalCount,
+      requests: config.requestBudget.used(),
+      complete: false, countryCoverageVerified: false, watermarkAdvanced: false
+    };
+    console.log(JSON.stringify(report));
+    return report;
+  } finally { lock.releaseLock(); }
+}
+
 function pilotWithin_(raw, config, window) {
   const instant = Date.parse(apiDate_(raw, config.dateTimezone, false));
   if (instant < window.start || instant > window.end) throw safeApiError_('PILOT_FILTER_RANGE_MISMATCH');
