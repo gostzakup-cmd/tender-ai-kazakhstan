@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install CI parser dependencies
+        run: npm install --prefix tools/ci --no-save --no-package-lock acorn yaml
       - name: Run offline unit tests
         run: node --test tests/core.test.cjs tests/upload.test.cjs tests/actions.test.cjs
       - name: Validate patch whitespace
