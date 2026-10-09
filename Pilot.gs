@@ -57,13 +57,32 @@ function pilotBudget_() {
 function pilotScan_(config, root, filter, fields, consume, report) {
   const query = 'query TenderPilot($filter: ' + root + 'FiltersInput!, $limit: Int!, $after: Int) { ' +
     root + '(filter: $filter, limit: $limit, after: $after) { ' + fields + ' } }';
-  let after = null, direction = 0, total = null, seen = 0;
+  let after = null, direction = 0, total = null, seen = 0, expectTerminalNull = false;
   report.complete = false; report.pages = 0; report.items = 0;
   // Only structural pagination evidence (no raw responses or tokens); max 40 pages/run.
   report.pageTrace = [];
   while (true) {
     const response = graphqlResponse_(config, query, {filter: filter, limit: TENDER_PILOT.pageSize, after: after});
     const rows = response.data[root], info = response.extensions && response.extensions.pageInfo;
+    // Observed on real OWS Lots pages: exactly totalCount rows can still have
+    // hasNextPage=true; an additional page returns data.Lots=null and lastId=0.
+    // Only a strictly matching terminal marker after the exact counted rows
+    // is accepted. Missing fields, malformed metadata and extra rows fail closed.
+    if (expectTerminalNull) {
+      if (root !== 'Lots' || !Object.prototype.hasOwnProperty.call(response.data, root) ||
+          rows !== null || !info || typeof info !== 'object' || Array.isArray(info) ||
+          info.limitPage !== TENDER_PILOT.pageSize || info.hasNextPage !== false ||
+          info.totalCount !== total || info.lastId !== 0 || seen !== total || total <= 0) {
+        throw safeApiError_('PILOT_TERMINAL_PAGE_UNVERIFIED');
+      }
+      report.pages += 1;
+      report.pageTrace.push({after: after, returned: 0, firstId: null, lastRowId: null,
+        pageInfoLastId: 0, hasNextPage: false, cumulativeItems: seen,
+        totalCount: total, terminalNull: true});
+      report.terminalNullConfirmed = true;
+      report.complete = true;
+      return;
+    }
     if (!Array.isArray(rows) || rows.length > TENDER_PILOT.pageSize || !info ||
         info.limitPage !== TENDER_PILOT.pageSize || typeof info.hasNextPage !== 'boolean' ||
         !Number.isInteger(info.totalCount) || info.totalCount < 0 ||
@@ -91,11 +110,15 @@ function pilotScan_(config, root, filter, fields, consume, report) {
       pageInfoLastId: infoLastId, hasNextPage: info.hasNextPage,
       cumulativeItems: seen, totalCount: total});
     if (seen > total || (!info.hasNextPage && seen !== total)) throw safeApiError_('PILOT_COUNT_MISMATCH');
-    if (info.hasNextPage && (!rows.length || Number(sourceId_(info.lastId)) !== last || last === after || seen >= total)) {
+    if (info.hasNextPage && (!rows.length || Number(sourceId_(info.lastId)) !== last ||
+        last === after || (seen === total && root !== 'Lots'))) {
       throw safeApiError_('PILOT_CURSOR_INVALID');
     }
     consume(rows);
     if (!info.hasNextPage) { report.complete = true; return; }
+    // Do not infer completion solely from the count: check exactly one more
+    // server page, under the existing pilot request/time/day limits.
+    if (seen === total) expectTerminalNull = true;
     after = last;
   }
 }
