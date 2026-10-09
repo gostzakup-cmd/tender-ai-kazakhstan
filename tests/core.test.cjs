@@ -1073,6 +1073,9 @@ test('cross-stream source changes keep coverage incomplete even after terminal p
   pilotResponse(h, 'Lots', [{...row, amount: 550000}]);
   const report = h.c.runTenderBoundedPilot();
   assert.equal(report.sourceChangedDuringRun, true); assert.equal(report.complete, false);
+  assert.equal(report.sourceDateTimezone, 'Asia/Almaty');
+  assert.equal(report.displayTimezone, 'Asia/Almaty');
+  assert.equal(report.displayUtcOffset, '+05:00');
   assert.equal(report.uniqueLots, 1);
 });
 
