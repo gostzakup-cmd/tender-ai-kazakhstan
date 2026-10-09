@@ -1596,7 +1596,7 @@ test('invalid goods dates still block readiness even when another sample normali
 
 test('national gate refresh adds unknown lots and preserves manual evidence on rerun', () => {
   const h = harness(); h.setup();
-  const header = h.c.TENDER_PILOT.headers.PILOT_LOTS;
+  const header = ['LOT_ID','HASH','STATUS','CLASSIFICATION','PLANNED_METHOD_ID','ACTUAL_METHOD_ID','PUBLISHED_RAW','NORMALIZED_JSON','FIRST_OBSERVED','LAST_OBSERVED','REVISION'];
   const source = h.sheets.get('PILOT_LOTS') || h.sheets.get('PILOT_LOTS') ||
     (() => { const sheet = h.c.SpreadsheetApp.getActiveSpreadsheet().insertSheet('PILOT_LOTS'); return sheet; })();
   source.appendRow(header);
