@@ -98,7 +98,7 @@ function graphqlResponse_(config, query, variables) {
     method: 'post', contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + apiToken_(), Accept: 'application/json' },
     payload: JSON.stringify({ query: query, variables: variables || {} })
-  });
+  }, config.requestBudget);
   if (!result || (Object.prototype.hasOwnProperty.call(result, 'errors') &&
       (!Array.isArray(result.errors) || result.errors.length))) {
     throw safeApiError_('API_GRAPHQL_ERRORS: сервер отклонил GraphQL-запрос; тела ошибок не логируются.');

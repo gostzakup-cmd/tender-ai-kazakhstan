@@ -82,10 +82,36 @@
     "statusReferenceCount": 37
   },
   "unverified": [
-    "Lots.id correlation",
     "API date timezone",
     "complete active-status codes",
     "all method URLs",
     "daily country coverage"
+  ],
+  "ownerLiveSummary": "stage2-live.user.json",
+  "additionalOfficialDocumentation": [
+    {
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/lots.doc.html",
+      "httpStatus": 200,
+      "checkedOnLocalDate": "2026-10-09",
+      "sha256": "308dfa8d5358f7e95b2e8f578ab2877db80b8181aaaf928b2e72722b3ae2e05f"
+    },
+    {
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/plansfiltersinput.doc.html",
+      "httpStatus": 200,
+      "checkedOnLocalDate": "2026-10-09",
+      "sha256": "53a7656a283bfdfaaa463d0b3efde237ea508efd6a22abafd3cc7ef8a6bb1378"
+    },
+    {
+      "url": "https://ows.goszakup.gov.kz/help/v3/schema/trdbuyfiltersinput.doc.html",
+      "httpStatus": 200,
+      "checkedOnLocalDate": "2026-10-09",
+      "sha256": "c81f67e32e9d5788b5b19661b40abb0742a1ed124336a0f92e6522c004050b04"
+    },
+    {
+      "url": "https://old.goszakup.gov.kz/ru/developer/ows_v3",
+      "httpStatus": 200,
+      "checkedOnLocalDate": "2026-10-09",
+      "sha256": "2356738625603b543bc4cb2db4d9f065917182fc022a8b803139d156fe94a833"
+    }
   ]
 }

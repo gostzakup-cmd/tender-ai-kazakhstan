@@ -128,7 +128,7 @@ function harness() {
       }
     }
   });
-  for (const name of ['Config.gs', 'Sheets.gs', 'Api.gs', 'V3.gs', 'Sync.gs', 'Diagnostics.gs', 'SelfTests.gs']) {
+  for (const name of ['Config.gs', 'Sheets.gs', 'Api.gs', 'V3.gs', 'Pilot.gs', 'Sync.gs', 'Diagnostics.gs', 'SelfTests.gs']) {
     vm.runInContext(fs.readFileSync(path.join(root, name), 'utf8'), context, {filename: name});
   }
   return {
@@ -780,16 +780,16 @@ test('empty real-shaped sample or failed schema does not validate the mapping', 
   assert.equal(h.properties.has('TENDER_V3_DIAGNOSTIC'), false);
 });
 
-test('verified V3 adapter drives full Sheets sync and trigger; later config change requires rechecking', () => {
+test('valid V3 proof still cannot start full sync, continuation or daily trigger', () => {
   const h = harness(); h.setup(); const config = configureV3(h);
   h.properties.set('TENDER_V3_VERIFIED_CONFIG', config.fingerprint); // Synthetic proof from a test-only endpoint.
-  graphResponse(h, {Lots: [v3Lot(102)]}); graphResponse(h, {Lots: []});
-  h.c.syncTenderLots();
-  assert.equal(data(h).length, 1);
-  assert.equal(data(h)[0][5], 10000000);
-  assert.equal(h.c.state_(), null);
-  h.c.installDailyTrigger();
-  assert.equal(h.triggers.filter(t => t.handler === 'dailyTenderSync').length, 1);
+  h.properties.set('TENDER_SYNC_STATE', JSON.stringify({cursor: 'old'}));
+  assert.throws(() => h.c.syncTenderLots(), /FULL_SCAN_DISABLED/);
+  assert.throws(() => h.c.installDailyTrigger(), /FULL_SCAN_DISABLED/);
+  assert.equal(h.fetchCalls.length, 0);
+  assert.equal(data(h).length, 0);
+  assert.equal(h.triggers.length, 0);
+  assert.equal(JSON.parse(h.properties.get('TENDER_SYNC_STATE')).cursor, 'old');
   h.properties.set('GOSZAKUP_PAGE_SIZE', '50');
   assert.throws(() => h.c.assertApiReady_(), /API_V3_LIVE_CHECK_REQUIRED/);
 });
@@ -886,4 +886,262 @@ test('V3 inconsistent lastId and stalled empty metadata cannot advance cursor', 
   graphResponse(h, {Lots: []}, null,
     {limitPage: 100, totalCount: 300, hasNextPage: true, lastId: 102});
   assert.throws(() => h.c.v3RawPage_(config, first.nextCursor), /API_V3_PAGE_INFO_INVALID/);
+});
+
+// Synthetic bounded-pilot fixtures; never executed against Google/Goszakup.
+function pilotFixture() {
+  const h = harness(); h.setup(); const config = configureV3(h);
+  h.properties.set('TENDER_V3_VERIFIED_CONFIG', config.fingerprint);
+  h.properties.set('TENDER_PILOT_WINDOW', JSON.stringify({from: '2026-10-08 07:00:00', to: '2026-10-08 07:59:00'}));
+  return {h, config, window: h.c.pilotWindow_(config)};
+}
+function pilotResponse(h, root, rows, {total = rows.length, next = false, lastId = rows.at(-1)?.id ?? null} = {}) {
+  rawResponse(h, {data: {[root]: rows}, extensions: {pageInfo: {limitPage: 20, totalCount: total, hasNextPage: next, lastId}}});
+}
+function pilotRow(id = 102, overrides = {}) {
+  return v3Lot(id, {lastUpdateDate: '2026-10-08 07:20:00', indexDate: '2026-10-08 07:25:00',
+    refTradeMethodsId: 3, refBuyTradeMethodsId: 6, ...overrides});
+}
+function pilotStreams(h, rows = [pilotRow()]) {
+  // Publication parent, its lots, lot updates, changed parents, index updates.
+  pilotResponse(h, 'TrdBuy', [{id: 555, publishDate: '2026-10-08 07:00:00'}]);
+  pilotResponse(h, 'Lots', rows);
+  pilotResponse(h, 'Lots', rows);
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', rows);
+}
+
+test('bounded pilot completes filtered streams and deduplicates snapshots/events by Lots.id', () => {
+  const {h} = pilotFixture(); pilotStreams(h);
+  const first = h.c.runTenderBoundedPilot();
+  assert.equal(first.complete, true); assert.equal(first.uniqueLots, 1); assert.equal(first.requests, 5);
+  assert.equal(first.countryCoverageVerified, false); assert.equal(first.watermarkAdvanced, false);
+  assert.equal(data(h, 'PILOT_EVENTS')[0][2], 'NEW_PUBLICATION');
+  assert.equal(data(h, 'PILOT_LOTS')[0][4], 3); assert.equal(data(h, 'PILOT_LOTS')[0][5], 6);
+  assert.equal(data(h).length, 0); assert.equal(h.triggers.length, 0);
+  pilotStreams(h); const second = h.c.runTenderBoundedPilot();
+  assert.equal(second.eventsAdded, 0); assert.equal(data(h, 'PILOT_LOTS').length, 1);
+  assert.equal(data(h, 'PILOT_EVENTS').length, 1);
+  assert.equal(h.properties.has('TENDER_SYNC_STATE'), false);
+});
+
+test('observed status changes are separate from first publication and amount updates', () => {
+  const {h, config, window} = pilotFixture(), sheets = h.c.pilotSheets_();
+  function save(row) { return h.c.pilotSave_(sheets, new Map([['102', row]]), config, window); }
+  save(pilotRow());
+  const closed = pilotRow(102, {RefLotsStatus: {code: 'INTERNAL_CLOSED', nameRu: 'TEST_CLOSED'}});
+  save(closed); save({...closed, amount: 5000});
+  assert.deepEqual(data(h, 'PILOT_EVENTS').map(r => r[2]), ['NEW_PUBLICATION', 'STATUS_CHANGED', 'LOT_UPDATED']);
+  assert.equal(JSON.parse(data(h, 'PILOT_LOTS')[0][7]).isActive, false);
+});
+
+test('first observation of an older publication is not a new publication', () => {
+  const {h, config, window} = pilotFixture(), row = pilotRow(); row.TrdBuy.publishDate = '2026-10-07 07:00:00';
+  h.c.pilotSave_(h.c.pilotSheets_(), new Map([['102', row]]), config, window);
+  assert.equal(data(h, 'PILOT_EVENTS')[0][2], 'FIRST_OBSERVED');
+});
+
+test('missing Plans and empty pointList remain quarantine even with goods parent', () => {
+  const {h, config, window} = pilotFixture(), row = pilotRow(102, {Plans: [], pointList: [],
+    TrdBuy: {...v3Lot().TrdBuy, refSubjectTypeId: 1}});
+  const c = h.c.pilotClassify_(row, config);
+  assert.equal(c.kind, 'QUARANTINE'); assert.equal(c.reason, 'API_LOT_SUBJECT_TYPE_UNVERIFIED');
+  h.c.pilotSave_(h.c.pilotSheets_(), new Map([['102', row]]), config, window);
+  assert.equal(data(h, 'PILOT_QUARANTINE').length, 1); assert.equal(data(h, 'PILOT_LOTS')[0][7], '');
+  assert.equal(data(h).length, 0);
+});
+
+test('missing Plans resolve only by exact documented Query.Plans IDs, preserving lot money', () => {
+  const {h, config} = pilotFixture(); config.requestBudget = h.c.pilotBudget_();
+  pilotResponse(h, 'Plans', [{id: 777, refSubjectTypeId: 1}]);
+  const rows = h.c.pilotResolvePlans_([pilotRow(102, {Plans: []})], config, new Map());
+  const payload = JSON.parse(h.fetchCalls[0].options.payload);
+  assert.deepEqual(payload.variables.filter, {id: [777]}); assert.ok(payload.query.includes('PlansFiltersInput'));
+  assert.equal(h.c.pilotClassify_(rows[0], config).lot.amount, 10000000);
+});
+
+test('unreturned or conflicting plan evidence is never inferred from lot number or parent', () => {
+  const {h, config} = pilotFixture(); pilotResponse(h, 'Plans', []);
+  const row = h.c.pilotResolvePlans_([pilotRow(102, {Plans: []})], config, new Map())[0];
+  assert.equal(h.c.pilotClassify_(row, config).kind, 'QUARANTINE');
+  const conflicting = pilotRow(102, {Plans: [{id: 777, refSubjectTypeId: 1}, {id: 777, refSubjectTypeId: 2}]});
+  assert.equal(h.c.pilotClassify_(conflicting, config).kind, 'QUARANTINE');
+});
+
+test('foreign plan ID stops lookup rather than blessing mismatched subject evidence', () => {
+  const {h, config} = pilotFixture(); pilotResponse(h, 'Plans', [{id: 999, refSubjectTypeId: 1}]);
+  assert.throws(() => h.c.pilotResolvePlans_([pilotRow(102, {Plans: []})], config, new Map()), /PILOT_PLAN_RESPONSE_INVALID/);
+});
+
+test('explicit deleted, non-goods and over-limit lots excluded; unknown deletion flag quarantined', () => {
+  const {h, config} = pilotFixture();
+  assert.equal(h.c.pilotClassify_(pilotRow(102, {isDeleted: 1, Plans: [], pointList: []}), config).kind, 'DELETED');
+  assert.equal(h.c.pilotClassify_(pilotRow(102, {Plans: [{id: 777, refSubjectTypeId: 2}]}), config).kind, 'EXCLUDED');
+  assert.equal(h.c.pilotClassify_(pilotRow(102, {amount: 10000001}), config).kind, 'EXCLUDED');
+  assert.equal(h.c.pilotClassify_(pilotRow(102, {isDeleted: null}), config).kind, 'QUARANTINE');
+});
+
+test('filtered pagination reads short pages to confirmed total and rejects repeated cursors', () => {
+  const {h, config} = pilotFixture(), report = {}, rows = [];
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 2, next: true});
+  pilotResponse(h, 'Lots', [pilotRow(101)], {total: 2});
+  h.c.pilotScan_(config, 'Lots', {id: [102, 101]}, 'id', page => rows.push(...page), report);
+  assert.equal(report.complete, true); assert.equal(rows.length, 2);
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 2, next: true});
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 2});
+  assert.throws(() => h.c.pilotScan_(config, 'Lots', {}, 'id', () => {}, {}), /PILOT_CURSOR_ORDER/);
+});
+
+test('global or changing filtered totalCount is not accepted as complete coverage', () => {
+  const {h, config} = pilotFixture();
+  pilotResponse(h, 'Lots', [pilotRow()], {total: 32440437});
+  assert.throws(() => h.c.pilotScan_(config, 'Lots', {}, 'id', () => {}, {}), /PILOT_COUNT_MISMATCH/);
+  pilotResponse(h, 'Lots', [pilotRow(102)], {total: 2, next: true});
+  pilotResponse(h, 'Lots', [pilotRow(101)], {total: 3});
+  assert.throws(() => h.c.pilotScan_(config, 'Lots', {}, 'id', () => {}, {}), /PILOT_PAGE_INFO_UNVERIFIED/);
+});
+
+test('out-of-window filter response produces incomplete report, no progress or full sync', () => {
+  const {h} = pilotFixture(); pilotResponse(h, 'TrdBuy', [{id: 555, publishDate: '2026-10-07 07:00:00'}]);
+  const report = h.c.runTenderBoundedPilot();
+  assert.equal(report.complete, false); assert.equal(report.issue, 'PILOT_FILTER_RANGE_MISMATCH');
+  assert.equal(report.watermarkAdvanced, false); assert.equal(h.triggers.length, 0);
+  assert.equal(h.properties.has('TENDER_SYNC_STATE'), false);
+});
+
+test('retry attempts reserve persisted quota before HTTP and stop on run cap', () => {
+  const {h, config} = pilotFixture(); const budget = h.c.pilotBudget_();
+  for (let i = 0; i < 38; i++) budget.claim();
+  h.responses.push({status: 503, body: '{}'}, {status: 503, body: '{}'});
+  assert.throws(() => h.c.fetchJsonWithRetry_(config.endpoint, {}, budget), /PILOT_REQUEST_LIMIT/);
+  assert.equal(h.fetchCalls.length, 2); assert.equal(budget.used(), 40);
+  assert.equal(JSON.parse(h.properties.get('TENDER_PILOT_QUOTA')).length, 40);
+});
+
+test('rolling 24h quota, corrupt state and runtime limits reject without sending requests', () => {
+  const {h} = pilotFixture();
+  h.properties.set('TENDER_PILOT_QUOTA', JSON.stringify(Array(200).fill(h.c.Date.now())));
+  assert.throws(() => h.c.pilotBudget_().claim(), /PILOT_DAILY_LIMIT/);
+  h.properties.set('TENDER_PILOT_QUOTA', '{broken');
+  assert.throws(() => h.c.pilotBudget_().claim(), /PILOT_QUOTA_STATE_INVALID/);
+  h.properties.set('TENDER_PILOT_QUOTA', '[]'); const budget = h.c.pilotBudget_(); h.advance(120000);
+  assert.throws(() => budget.claim(), /PILOT_TIME_LIMIT/);
+  assert.equal(h.fetchCalls.length, 0);
+});
+
+test('window bound, missing timezone and stale proof prevent pilot before mutation/HTTP', () => {
+  const {h} = pilotFixture();
+  h.properties.set('TENDER_PILOT_WINDOW', '{"from":"2026-10-08 05:00:00","to":"2026-10-08 07:59:00"}');
+  assert.throws(() => h.c.runTenderBoundedPilot(), /PILOT_WINDOW_INVALID/);
+  h.properties.delete('GOSZAKUP_API_DATE_TIMEZONE');
+  assert.throws(() => h.c.runTenderBoundedPilot(), /SOURCE_DATE_TIMEZONE_REQUIRED/);
+  h.properties.set('GOSZAKUP_API_DATE_TIMEZONE', 'Asia/Almaty');
+  h.properties.set('TENDER_V3_VERIFIED_CONFIG', 'OLD');
+  assert.throws(() => h.c.runTenderBoundedPilot(), /API_V3_LIVE_CHECK_REQUIRED/);
+  assert.equal(h.fetchCalls.length, 0); assert.equal(h.sheets.has('PILOT_LOTS'), false);
+});
+
+test('event-first write survives flush failure and retry without duplicate or missing event', () => {
+  const {h, config, window} = pilotFixture(), sheets = h.c.pilotSheets_(), items = new Map([['102', pilotRow()]]);
+  h.failFlush(); assert.throws(() => h.c.pilotSave_(sheets, items, config, window), /test flush failure/);
+  assert.equal(data(h, 'PILOT_EVENTS').length, 1); assert.equal(data(h, 'PILOT_LOTS').length, 0);
+  h.c.pilotSave_(sheets, items, config, window);
+  assert.equal(data(h, 'PILOT_EVENTS').length, 1); assert.equal(data(h, 'PILOT_LOTS').length, 1);
+});
+
+test('quarantine clears only on explicit resolved evidence; query omission does not delete snapshot', () => {
+  const {h, config, window} = pilotFixture(), sheets = h.c.pilotSheets_();
+  h.c.pilotSave_(sheets, new Map([['102', pilotRow(102, {Plans: []})]]), config, window);
+  assert.equal(data(h, 'PILOT_QUARANTINE').length, 1);
+  h.c.pilotSave_(sheets, new Map(), config, window);
+  assert.equal(data(h, 'PILOT_LOTS').length, 1); assert.equal(data(h, 'PILOT_QUARANTINE').length, 1);
+  h.c.pilotSave_(sheets, new Map([['102', pilotRow()]]), config, window);
+  assert.equal(data(h, 'PILOT_QUARANTINE').filter(r => r[0]).length, 0);
+});
+
+test('pilot output redacts reflected token and guards formula-like status values', () => {
+  const {h, config, window} = pilotFixture(), token = h.properties.get('GOSZAKUP_TOKEN');
+  const row = pilotRow(102, {nameRu: token, RefLotsStatus: {code: '=TEST()', nameRu: 'TEST'}});
+  h.c.pilotSave_(h.c.pilotSheets_(), new Map([['102', row]]), config, window);
+  assert.equal(data(h, 'PILOT_LOTS')[0][2], "'=TEST()");
+  assert.ok(!JSON.stringify([...h.sheets.values()].map(s => s.rows)).includes(token));
+});
+
+test('cross-stream source changes keep coverage incomplete even after terminal pages', () => {
+  const {h} = pilotFixture(); const row = pilotRow();
+  pilotResponse(h, 'TrdBuy', []); pilotResponse(h, 'Lots', [row]); pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', [{...row, amount: 550000}]);
+  const report = h.c.runTenderBoundedPilot();
+  assert.equal(report.sourceChangedDuringRun, true); assert.equal(report.complete, false);
+  assert.equal(report.sourceDateTimezone, 'Asia/Almaty');
+  assert.equal(report.displayTimezone, 'Asia/Almaty');
+  assert.equal(report.displayUtcOffset, '+05:00');
+  assert.equal(report.uniqueLots, 1);
+});
+
+test('pilot lot cap leaves a partial report and never marks country or daily readiness', () => {
+  const {h} = pilotFixture(); pilotResponse(h, 'TrdBuy', []);
+  for (let offset = 0; offset < 220; offset += 20) {
+    pilotResponse(h, 'Lots', Array.from({length: 20}, (_, i) => pilotRow(1000 - offset - i)),
+      {total: 220, next: offset < 200});
+  }
+  const report = h.c.runTenderBoundedPilot();
+  assert.equal(report.issue, 'PILOT_LOT_LIMIT'); assert.equal(report.uniqueLots, 200);
+  assert.equal(report.complete, false); assert.equal(report.dailyCoverageVerified, false);
+  assert.equal(report.mvpReady, false); assert.equal(h.triggers.length, 0);
+});
+
+test('method IDs of an unexpected type are quarantined and cannot execute a sheet formula', () => {
+  const {h, config, window} = pilotFixture(), row = pilotRow(102, {refBuyTradeMethodsId: '=TEST()'});
+  h.c.pilotSave_(h.c.pilotSheets_(), new Map([['102', row]]), config, window);
+  assert.equal(data(h, 'PILOT_LOTS')[0][5], '');
+  assert.equal(data(h, 'PILOT_QUARANTINE')[0][1], 'API_LOT_METHOD_INVALID');
+});
+
+test('same status transition on a later revision produces a new observed event', () => {
+  const {h, config, window} = pilotFixture(), sheets = h.c.pilotSheets_();
+  const open = pilotRow(), closed = pilotRow(102, {RefLotsStatus: {code: 'TEST_CLOSED'}});
+  for (const row of [open, closed, open, closed]) h.c.pilotSave_(sheets, new Map([['102', row]]), config, window);
+  assert.deepEqual(data(h, 'PILOT_EVENTS').map(r => r[2]), ['NEW_PUBLICATION', 'STATUS_CHANGED', 'STATUS_CHANGED', 'STATUS_CHANGED']);
+  assert.equal(new Set(data(h, 'PILOT_EVENTS').map(r => r[0])).size, 4);
+});
+
+test('explicit diagnostic IDs can supply eligible sample when initial registry pages are all deleted', () => {
+  const {h} = pilotFixture();
+  h.properties.set('GOSZAKUP_DIAGNOSTIC_LOT_IDS', '[43495954]');
+  graphResponse(h, introspectionFromOfficialSdl());
+  graphResponse(h, {Lots: [v3Lot(102, {isDeleted: 1, Plans: []})]});
+  graphResponse(h, {Lots: []});
+  graphResponse(h, {Lots: [v3Lot(43495954)]});
+  const report = h.c.testGoszakupV3Connection();
+  assert.equal(report.mvpReady, true); assert.equal(report.targetedItemsChecked, 1);
+  assert.equal(report.eligibleNormalizedSamples, 1); assert.equal(report.itemsChecked, 1);
+  assert.equal(report.fullCountryCoverageVerified, false);
+  assert.throws(() => h.c.syncTenderLots(), /FULL_SCAN_DISABLED/);
+});
+
+test('targeted diagnostic refuses foreign sample IDs and does not retain readiness proof', () => {
+  const {h} = pilotFixture(); h.properties.set('GOSZAKUP_DIAGNOSTIC_LOT_IDS', '[43495954]');
+  graphResponse(h, introspectionFromOfficialSdl());
+  graphResponse(h, {Lots: []}, null, {limitPage: 100, totalCount: 0, hasNextPage: false});
+  graphResponse(h, {Lots: [v3Lot(999)]});
+  assert.throws(() => h.c.testGoszakupV3Connection(), /API_DIAGNOSTIC_IDS_MISMATCH/);
+  assert.equal(h.properties.has('TENDER_V3_VERIFIED_CONFIG'), false);
+});
+
+test('bad publication date is quarantined and never called a new publication', () => {
+  const {h, config, window} = pilotFixture(), row = pilotRow(); row.TrdBuy.publishDate = 'NOT_A_DATE';
+  h.c.pilotSave_(h.c.pilotSheets_(), new Map([['102', row]]), config, window);
+  assert.equal(data(h, 'PILOT_QUARANTINE')[0][1], 'API_SOURCE_DATE_INVALID');
+  assert.equal(data(h, 'PILOT_EVENTS')[0][2], 'FIRST_OBSERVED');
+});
+
+test('targeted valid sample does not suppress normalization failures in registry probe', () => {
+  const {h} = pilotFixture(); h.properties.set('GOSZAKUP_DIAGNOSTIC_LOT_IDS', '[43495954]');
+  graphResponse(h, introspectionFromOfficialSdl());
+  graphResponse(h, {Lots: [v3Lot(102, {Plans: []})]}); graphResponse(h, {Lots: []});
+  graphResponse(h, {Lots: [v3Lot(43495954)]});
+  const report = h.c.testGoszakupV3Connection();
+  assert.equal(report.mvpReady, false); assert.equal(h.properties.has('TENDER_V3_VERIFIED_CONFIG'), false);
+  assert.ok(report.normalizationErrors.includes('API_LOT_SUBJECT_TYPE_UNVERIFIED'));
 });

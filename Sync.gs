@@ -1,10 +1,11 @@
 /** Полный обход: новые записи и обновления ранее сохранённых лотов. */
 function syncTenderLots() {
+  // До catch: запрет не должен создавать continuation даже при старом state.
+  assertApiReady_();
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return;
   try {
     assertSheetsReady_();
-    assertApiReady_();
     const started = Date.now();
     let state = state_();
     if (!state) {

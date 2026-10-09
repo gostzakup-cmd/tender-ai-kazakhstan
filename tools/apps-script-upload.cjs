@@ -6,7 +6,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const SCRIPT_ID = '1_UmAJ7xfIks7b2Q_PjDt_xUoEzovUIh5V5e_leuiJW2O9MGA9maQGL-y';
-const FILES = ['Config.gs', 'Sheets.gs', 'Api.gs', 'V3.gs', 'Sync.gs', 'Diagnostics.gs', 'SelfTests.gs'];
+const FILES = ['Config.gs', 'Sheets.gs', 'Api.gs', 'V3.gs', 'Pilot.gs', 'Sync.gs', 'Diagnostics.gs', 'SelfTests.gs'];
 const ROOT = path.resolve(__dirname, '..');
 const IGNORE = '**/**\n!**/*.gs\n!**/*.js\n!**/*.html\n!appsscript.json\n';
 function check(condition, message) { if (!condition) throw new Error(message); }
@@ -91,7 +91,7 @@ function buildStage(snapshot, repository, stage) {
   const config = json(path.join(snapshot, '.clasp.json'));
   writeJson(path.join(stage, '.clasp.json'), {...config, scriptId: SCRIPT_ID, rootDir: '.',
     scriptExtensions: ['.js', '.gs'], htmlExtensions: ['.html'], jsonExtensions: ['.json'], skipSubdirectories: false});
-  // Exactly the cloned file set plus the seven MVP sources and manifest.
+  // Exactly the cloned file set plus the MVP sources and manifest.
   fs.writeFileSync(path.join(stage, '.claspignore'), IGNORE, {mode: 0o600});
   const after = inventory(stage);
   for (const [name, file] of Object.entries(before)) {
