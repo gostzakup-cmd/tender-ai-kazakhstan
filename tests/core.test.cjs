@@ -1212,6 +1212,51 @@ test('read-only cursor probe reports malformed pageInfo fields without weakening
   assert.equal(report.requests, 1);
 });
 
+test('read-only indexDate probe distinguishes zero-result null marker and never writes', () => {
+  const {h} = pilotFixture();
+  pilotResponse(h, 'TrdBuy', []);
+  pilotResponse(h, 'Lots', []);
+  pilotResponse(h, 'TrdBuy', []);
+  rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0
+  }}});
+  const first = h.c.runTenderBoundedPilot();
+  assert.equal(first.issue, 'PILOT_PAGE_INFO_UNVERIFIED');
+  assert.equal(first.streams[3].name, 'Lots.indexDate');
+  const snapshots = json([...h.sheets].map(([name, sheet]) => [name, sheet.rows]));
+  const requestCount = h.fetchCalls.length;
+  rawResponse(h, {data: {Lots: null}, extensions: {pageInfo: {
+    limitPage: 20, totalCount: 0, hasNextPage: false, lastId: 0
+  }}});
+  const probe = h.c.inspectTenderPilotIndexDatePage();
+  assert.equal(probe.mode, 'READ_ONLY_INDEX_FIRST_PAGE');
+  assert.equal(probe.stream, 'Lots.indexDate');
+  assert.equal(probe.lotsResultKind, 'null');
+  assert.deepEqual(json(probe.pageInfoIssues), ['LOTS_NOT_ARRAY']);
+  assert.equal(probe.emptyNullCandidate, true);
+  assert.equal(probe.complete, false);
+  assert.equal(probe.watermarkAdvanced, false);
+  assert.equal(probe.requests, 1);
+  assert.equal(h.fetchCalls.length, requestCount + 1);
+  assert.deepEqual(json([...h.sheets].map(([name, sheet]) => [name, sheet.rows])), snapshots);
+  const body = JSON.parse(h.fetchCalls.at(-1).options.payload);
+  assert.deepEqual(json(body.variables.filter), {indexDate: ['2026-10-08 07:00:00', '2026-10-08 07:59:00']});
+  assert.equal(body.variables.after, null);
+  assert.equal(h.triggers.length, 0);
+});
+
+test('read-only indexDate probe rejects mismatched last pilot report before HTTP', () => {
+  const {h} = pilotFixture();
+  const baseline = h.fetchCalls.length;
+  assert.throws(() => h.c.inspectTenderPilotIndexDatePage(), /PILOT_INDEX_PROBE_REPORT_REQUIRED/);
+  assert.equal(h.fetchCalls.length, baseline);
+  pilotStreams(h);
+  assert.equal(h.c.runTenderBoundedPilot().complete, true);
+  const calls = h.fetchCalls.length;
+  assert.throws(() => h.c.inspectTenderPilotIndexDatePage(), /PILOT_INDEX_PROBE_NOT_APPLICABLE/);
+  assert.equal(h.fetchCalls.length, calls);
+});
+
 test('read-only filtered cursor probe rejects unsuitable or unverified reports before HTTP', () => {
   const {h} = pilotFixture();
   const baseline = h.fetchCalls.length;
