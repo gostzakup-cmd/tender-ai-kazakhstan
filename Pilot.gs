@@ -160,7 +160,7 @@ function inspectTenderPilotPaginationConflict() {
       return Number.isSafeInteger(id) && id > 0 && id < (i ? ids[i - 1] : cursor);
     });
     const lastReturnedId = ids.length ? ids[ids.length - 1] : null;
-    const infoLastId = info.lastId === null ? null : Number(sourceId_(info.lastId));
+    const infoLastId = info.lastId == null ? null : Number(sourceId_(info.lastId));
     const report = {
       mode: 'READ_ONLY_SINGLE_PAGE', from: window.from, to: window.to,
       sourceDateTimezone: config.dateTimezone, stream: 'Lots.lastUpdateDate',
