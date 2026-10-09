@@ -708,3 +708,119 @@ function refreshTenderNationalGate() {
     return result;
   } finally { lock.releaseLock(); }
 }
+
+
+/**
+ * Owner-run, READ ONLY KTRU probe for up to three verified active pilot goods.
+ * GraphQL Lots.Plans.refEnstruCode is a product classification code, NOT
+ * the portal's national-regime verdict. No Sheets writes or automatic SKIP/PASS.
+ * A missing or partially resolved plan makes the code unverified.
+ */
+function inspectTenderNationalKtru() {
+  assertSheetsReady_();
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw safeApiError_('PILOT_ALREADY_RUNNING');
+  try {
+    const book = spreadsheet_();
+    const sheet = book.getSheetByName('PILOT_LOTS');
+    if (!sheet || !sheet.getLastRow() ||
+        sheet.getRange(1, 1, 1, TENDER_PILOT.headers.PILOT_LOTS.length)
+          .getValues()[0].join('|') !== TENDER_PILOT.headers.PILOT_LOTS.join('|')) {
+      throw safeApiError_('PILOT_SHEET_STRUCTURE_INVALID');
+    }
+    const rows = sheet.getDataRange().getValues().slice(1);
+    if (rows.length > TENDER_PILOT.maxRows) throw safeApiError_('PILOT_STORAGE_LIMIT');
+    const goods = [], ids = new Set();
+    rows.forEach(function (row) {
+      const id = String(row[0]);
+      if (!id || row[3] !== 'ELIGIBLE_GOODS' || !row[7]) return;
+      if (!/^\d{1,10}$/.test(id) || Number(id) < 1 || ids.has(id)) {
+        throw safeApiError_('NATIONAL_KTRU_PILOT_ID_INVALID');
+      }
+      ids.add(id);
+      let record;
+      try { record = JSON.parse(row[7]); }
+      catch (e) { throw safeApiError_('NATIONAL_KTRU_PILOT_JSON_INVALID'); }
+      if (!record || record.id !== id || record.isGoods !== true ||
+          record.isActive !== true) return;
+      goods.push({id: id, name: pilotSafe_(record.name), status: pilotSafe_(record.status)});
+    });
+    // A small live sample: never bulk-scan the full registry.
+    goods.sort(function (a, b) { return Number(a.id) - Number(b.id); });
+    const sample = goods.slice(0, 3);
+    if (!sample.length) return {
+      mode: 'READ_ONLY_NATIONAL_KTRU', candidates: 0, sampled: 0,
+      automaticallyDeterminedNationalRegime: 0, readyToSkip: false,
+      reason: 'NO_ACTIVE_VERIFIED_PILOT_GOODS'
+    };
+    const config = v3Config_();
+    apiToken_();
+    const query = 'query NationalKtru($filter: LotsFiltersInput!, $limit: Int!) { ' +
+      'Lots(filter: $filter, limit: $limit) { ' +
+      'id pointList Plans { id refSubjectTypeId refEnstruCode } } }';
+    const result = graphqlResponse_(config, query, {
+      filter: {id: sample.map(function (g) { return Number(g.id); })},
+      limit: 5
+    });
+    const fetched = result.data.Lots;
+    if (!Array.isArray(fetched) || fetched.length > 5) {
+      throw safeApiError_('NATIONAL_KTRU_RESPONSE_INVALID');
+    }
+    const expected = new Set(sample.map(function (x) { return x.id; }));
+    const seen = new Set();
+    const got = new Map();
+    fetched.forEach(function (lot) {
+      if (!lot || typeof lot !== 'object') throw safeApiError_('NATIONAL_KTRU_RESPONSE_INVALID');
+      const id = sourceId_(lot.id);
+      if (!expected.has(id) || seen.has(id)) throw safeApiError_('NATIONAL_KTRU_ID_MISMATCH');
+      seen.add(id);
+      got.set(id, lot);
+    });
+    const items = sample.map(function (item) {
+      const raw = got.get(item.id);
+      const output = {lotId: item.id, name: item.name, ktruCodes: [],
+        planCoverageVerified: false, nationalRegime: 'UNVERIFIED'};
+      if (!raw || !Array.isArray(raw.pointList) || !raw.pointList.length ||
+          !Array.isArray(raw.Plans) || raw.Plans.length !== raw.pointList.length) {
+        output.reason = 'MISSING_LOT_OR_PLAN_COVERAGE';
+        return output;
+      }
+      const pointIds = raw.pointList.map(sourceId_);
+      if (new Set(pointIds).size !== pointIds.length) {
+        output.reason = 'DUPLICATE_PLAN_POINT';
+        return output;
+      }
+      const codes = [], linked = new Set();
+      for (const plan of raw.Plans) {
+        if (!plan || plan.refSubjectTypeId !== 1 ||
+            typeof plan.refEnstruCode !== 'string' ||
+            !/^[0-9]+(?:\.[0-9]+)*$/.test(plan.refEnstruCode)) {
+          output.reason = 'PLAN_KTRU_OR_GOODS_UNVERIFIED';
+          return output;
+        }
+        const point = sourceId_(plan.id);
+        if (!pointIds.includes(point) || linked.has(point)) {
+          output.reason = 'PLAN_POINT_MISMATCH';
+          return output;
+        }
+        linked.add(point);
+        codes.push(plan.refEnstruCode);
+      }
+      if (linked.size !== pointIds.length) {
+        output.reason = 'PLAN_COVERAGE_INCOMPLETE';
+        return output;
+      }
+      output.ktruCodes = Array.from(new Set(codes)).sort();
+      output.planCoverageVerified = true;
+      output.reason = 'KTRU_ONLY_NATIONAL_REGIME_NOT_IN_GRAPHQL';
+      return output;
+    });
+    const report = {mode: 'READ_ONLY_NATIONAL_KTRU',
+      source: 'Goszakup OWS GraphQL v3 Lots.Plans.refEnstruCode',
+      candidates: goods.length, sampled: sample.length, returned: fetched.length,
+      items: items, automaticallyDeterminedNationalRegime: 0, readyToSkip: false,
+      noSheetChanges: true, noWatermarkChanges: true, mvpReady: false};
+    console.log(JSON.stringify(report));
+    return report;
+  } finally { lock.releaseLock(); }
+}
