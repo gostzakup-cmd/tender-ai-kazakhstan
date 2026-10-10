@@ -899,15 +899,7 @@ function inspectTenderNationalEvidence(lotIds) {
         PropertiesService.getScriptProperties().getProperty(V3_PROOF_KEY) === config.fingerprint;
       // The existing pilot and this probe share one daily ledger under one lock.
       // Reserve before every attempt, including failed/retried requests.
-      const shared = pilotBudget_();
-      budget = {
-        used: function () { return shared.used(); },
-        claim: function () {
-          if (Date.now() - started >= 30000) throw safeApiError_('NATIONAL_EVIDENCE_TIME_LIMIT');
-          if (shared.used() >= 4) throw safeApiError_('NATIONAL_EVIDENCE_REQUEST_LIMIT');
-          shared.claim();
-        }
-      };
+      budget = nationalProbeBudget_(started);
       config.requestBudget = budget;
       const fields = selection_(Object.assign({}, V3_FIELDS, {
         plannedMethod: 'refTradeMethodsId', actualMethod: 'refBuyTradeMethodsId',
@@ -944,6 +936,25 @@ function inspectTenderNationalEvidence(lotIds) {
   } finally { lock.releaseLock(); }
   report.requests = budget ? budget.used() : 0;
   report.observedAt = new Date().toISOString();
+  const result = nationalSafeReport_(report);
+  console.log(JSON.stringify(result));
+  return result;
+}
+
+/** Both national probes must acquire the script lock before using this budget. */
+function nationalProbeBudget_(started) {
+  const shared = pilotBudget_();
+  return {
+    used: function () { return shared.used(); },
+    claim: function () {
+      if (Date.now() - started >= 30000) throw safeApiError_('NATIONAL_EVIDENCE_TIME_LIMIT');
+      if (shared.used() >= 4) throw safeApiError_('NATIONAL_EVIDENCE_REQUEST_LIMIT');
+      shared.claim();
+    }
+  };
+}
+
+function nationalSafeReport_(report) {
   // Scrub values before serialization, avoiding replacement inside JSON syntax.
   const scrub = function (value) {
     if (typeof value === 'string') return pilotSafe_(value);
@@ -956,9 +967,7 @@ function inspectTenderNationalEvidence(lotIds) {
     if (typeof value === 'number' && pilotSafe_(String(value)).includes('[REDACTED]')) return null;
     return value;
   };
-  const result = scrub(report);
-  console.log(JSON.stringify(result));
-  return result;
+  return scrub(report);
 }
 
 /** Strict bounded data checks; these are internal report fields, not API fields. */
@@ -1002,4 +1011,107 @@ function nationalEvidenceLot_(item, row, config, configurationVerified) {
   }
   // Neither a complete KTRU, a method, nor a runtime configuration proof can
   // change nationalRegime/decision. Current authoritative lot proof is absent.
+}
+
+/**
+ * Manual structural schema inventory, independent of runtime timezone/proof.
+ * Uses standard GraphQL introspection only; discovers names, never invents
+ * a national-regime field. API reads plus the shared quota ledger only.
+ */
+function inspectTenderNationalSchema() {
+  const started = Date.now();
+  const report = {mode: 'API_SCHEMA_READ_ONLY_QUOTA_ACCOUNTED',
+    observedAt: new Date().toISOString(), apiEndpoint: null, requests: 0,
+    introspectionShapeVerified: false, nationalFieldVerified: false,
+    nationalRegime: 'UNVERIFIED', decision: 'HOLD_NATIONAL',
+    reason: 'SCHEMA_METADATA_IS_NOT_CURRENT_LOT_PROOF', types: [],
+    noSheetChanges: true, quotaAccountingOnly: true, watermarkAdvanced: false,
+    countryCoverageVerified: false, dailyCoverageVerified: false, mvpReady: false};
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw safeApiError_('PILOT_ALREADY_RUNNING');
+  let budget = null;
+  try {
+    // No setup call and no pilot/owner evidence edits, even on missing configuration.
+    assertSheetsReady_();
+    const config = v3Config_();
+    if (config.endpoint !== TENDER.v3Endpoint) throw safeApiError_('NATIONAL_SCHEMA_DEFAULT_SOURCE_REQUIRED');
+    apiToken_();
+    report.apiEndpoint = config.endpoint;
+    budget = nationalProbeBudget_(started); config.requestBudget = budget;
+    const ref = 'kind name ofType { kind name ofType { kind name ofType { kind name ' +
+      'ofType { kind name ofType { kind name } } } } }';
+    const objectFields = 'name kind fields(includeDeprecated: true) { name description ' +
+      'isDeprecated deprecationReason type { ' + ref + ' } }';
+    const query = 'query NationalSchema { ' +
+      'lots: __type(name: "Lots") { ' + objectFields + ' } ' +
+      'plans: __type(name: "PlnPoint") { ' + objectFields + ' } ' +
+      'announcement: __type(name: "TrdBuy") { ' + objectFields + ' } ' +
+      'filter: __type(name: "LotsFiltersInput") { name kind inputFields { ' +
+      'name description type { ' + ref + ' } } } }';
+    const data = graphql_(config, query);
+    if (Date.now() - started >= 30000) throw safeApiError_('NATIONAL_EVIDENCE_TIME_LIMIT');
+    const requested = [['lots', 'Lots', 'OBJECT'], ['plans', 'PlnPoint', 'OBJECT'],
+      ['announcement', 'TrdBuy', 'OBJECT'], ['filter', 'LotsFiltersInput', 'INPUT_OBJECT']];
+    const types = requested.map(function (request) {
+      const source = data[request[0]], object = request[2] === 'OBJECT';
+      const fields = source && source[object ? 'fields' : 'inputFields'];
+      if (!source || source.name !== request[1] || source.kind !== request[2] ||
+          !Array.isArray(fields) || !fields.length || fields.length > 200) {
+        throw safeApiError_('NATIONAL_SCHEMA_TYPE_UNVERIFIED');
+      }
+      const names = new Set();
+      const records = fields.map(function (field) {
+        if (!field || !nationalSchemaName_(field.name) || names.has(field.name) ||
+            (field.description !== null && typeof field.description !== 'string') ||
+            (object && (typeof field.isDeprecated !== 'boolean' ||
+            (field.deprecationReason !== null && typeof field.deprecationReason !== 'string')))) {
+          throw safeApiError_('NATIONAL_SCHEMA_FIELD_UNVERIFIED');
+        }
+        names.add(field.name);
+        const description = field.description === null ? null : pilotSafe_(field.description);
+        const reason = !object || field.deprecationReason === null ? null : pilotSafe_(field.deprecationReason);
+        return {name: field.name, type: nationalSchemaRef_(field.type, 0),
+          description: description === null ? null : description.slice(0, 1000),
+          descriptionComplete: description === null || description.length <= 1000,
+          deprecated: object ? field.isDeprecated : null,
+          deprecationReason: reason === null ? null : reason.slice(0, 1000),
+          deprecationReasonComplete: reason === null || reason.length <= 1000,
+          requiresSemanticReview: /национальн|изъяти|national|regime/i.test(field.name + ' ' + (description || ''))};
+      }).sort(function (a, b) { return a.name.localeCompare(b.name); });
+      return {name: request[1], kind: request[2], fieldNamesComplete: true, fields: records};
+    });
+    // Validate all types and bounded output before publishing any schema inventory.
+    if (JSON.stringify(types).length > 120000) throw safeApiError_('NATIONAL_SCHEMA_OUTPUT_LIMIT');
+    report.types = types;
+    report.introspectionShapeVerified = true;
+  } catch (e) {
+    const code = e && e.tenderSafeMessage && e.tenderSafeMessage.split(':')[0];
+    report.issue = typeof code === 'string' && /^(API|PILOT|NATIONAL)_[A-Z0-9_]+$/.test(code) ?
+      code : 'NATIONAL_SCHEMA_CHECK_FAILED';
+  } finally { lock.releaseLock(); }
+  report.requests = budget ? budget.used() : 0;
+  report.observedAt = new Date().toISOString();
+  const result = nationalSafeReport_(report), json = JSON.stringify(result);
+  for (let offset = 0; offset < json.length; offset += 4000) {
+    console.log('NATIONAL_SCHEMA_JSON_PART_' + (offset / 4000 + 1) + ': ' + json.slice(offset, offset + 4000));
+  }
+  return result;
+}
+
+function nationalSchemaName_(name) {
+  return typeof name === 'string' && name.length <= 100 && /^[_A-Za-z][_0-9A-Za-z]*$/.test(name);
+}
+
+function nationalSchemaRef_(ref, depth) {
+  if (!ref || typeof ref !== 'object' || depth > 5) throw safeApiError_('NATIONAL_SCHEMA_REF_UNVERIFIED');
+  if (['NON_NULL', 'LIST'].includes(ref.kind)) {
+    if (ref.name !== null) throw safeApiError_('NATIONAL_SCHEMA_REF_UNVERIFIED');
+    const nested = nationalSchemaRef_(ref.ofType, depth + 1);
+    return ref.kind === 'LIST' ? '[' + nested + ']' : nested + '!';
+  }
+  if (!['SCALAR', 'OBJECT', 'INPUT_OBJECT', 'ENUM', 'INTERFACE', 'UNION'].includes(ref.kind) ||
+      !nationalSchemaName_(ref.name) || ref.ofType != null) {
+    throw safeApiError_('NATIONAL_SCHEMA_REF_UNVERIFIED');
+  }
+  return ref.name;
 }
