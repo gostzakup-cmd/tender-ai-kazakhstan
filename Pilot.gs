@@ -824,3 +824,182 @@ function inspectTenderNationalKtru() {
     return report;
   } finally { lock.releaseLock(); }
 }
+
+/**
+ * Manual API read-only evidence preparation, max three explicit pilot IDs.
+ * Only TENDER_PILOT_QUOTA is written (shared rolling attempt ledger).
+ * No national-regime API field/source is verified: every result stays HOLD.
+ * This is not a portal scraper, national classifier, pilot run or TS runner.
+ */
+function inspectTenderNationalEvidence(lotIds) {
+  const selected = lotIds === undefined ? [43543910, 43544048, 43544131] : lotIds;
+  if (!Array.isArray(selected) || !selected.length || selected.length > 3 ||
+      selected.some(function (id) {
+        return !['number', 'string'].includes(typeof id) ||
+          !/^[1-9][0-9]*$/.test(String(id)) || String(Number(id)) !== String(id) ||
+          !Number.isSafeInteger(Number(id)) || Number(id) > 2147483647;
+      }) || new Set(selected.map(String)).size !== selected.length) {
+    throw safeApiError_('NATIONAL_EVIDENCE_IDS_INVALID');
+  }
+  const ids = selected.map(String), started = Date.now();
+  const report = {
+    mode: 'API_READ_ONLY_QUOTA_ACCOUNTED', observedAt: new Date().toISOString(),
+    apiEndpoint: null, requests: 0, apiResponseValidated: false,
+    configurationVerified: false, nationalSourceVerified: false,
+    readyToSkip: false, readyToPassToTs: false, noSheetChanges: true,
+    quotaAccountingOnly: true, watermarkAdvanced: false, mvpReady: false,
+    countryCoverageVerified: false, dailyCoverageVerified: false,
+    items: ids.map(function (id) {
+      return {lotId: id, classification: 'UNVERIFIED', planCoverageVerified: false,
+        ktruCodes: [], nationalRegime: 'UNVERIFIED', decision: 'HOLD_NATIONAL',
+        nationalProofUrl: null, nationalProofObservedAt: null,
+        sourceValidity: 'NO_AUTHORITATIVE_LOT_PROOF', methodScopeVerified: false,
+        reason: 'NATIONAL_SOURCE_NOT_VERIFIED', dataIssues: []};
+    })
+  };
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw safeApiError_('PILOT_ALREADY_RUNNING');
+  let budget = null;
+  try {
+    assertSheetsReady_();
+    const sheet = spreadsheet_().getSheetByName('PILOT_LOTS');
+    if (!sheet || sheet.getLastRow() < 2 || sheet.getLastRow() > TENDER_PILOT.maxRows + 1 ||
+        sheet.getRange(1, 1, 1, TENDER_PILOT.headers.PILOT_LOTS.length)
+          .getValues()[0].join('|') !== TENDER_PILOT.headers.PILOT_LOTS.join('|')) {
+      throw safeApiError_('NATIONAL_EVIDENCE_PILOT_INVALID');
+    }
+    const cached = new Map();
+    sheet.getDataRange().getValues().slice(1).forEach(function (row) {
+      const id = String(row[0]);
+      if (!ids.includes(id)) return;
+      if (cached.has(id)) throw safeApiError_('NATIONAL_EVIDENCE_DUPLICATE_PILOT_ID');
+      cached.set(id, row);
+    });
+    const candidates = report.items.filter(function (item) {
+      const row = cached.get(item.lotId);
+      let value = null;
+      try { value = row && JSON.parse(row[7]); } catch (e) { /* Unknown, never guess goods. */ }
+      if (!row || row[3] !== 'ELIGIBLE_GOODS' || !value || value.id !== item.lotId ||
+          value.isGoods !== true || value.isActive !== true ||
+          typeof value.amount !== 'number' || !Number.isFinite(value.amount) ||
+          value.amount < 0 || value.amount > TENDER.maxAmount) {
+        item.dataIssues.push('PILOT_CANDIDATE_NOT_VERIFIED');
+        return false;
+      }
+      return true;
+    });
+    if (candidates.length) {
+      const config = v3Config_();
+      if (JSON.stringify(config.fields) !== JSON.stringify(V3_FIELDS) || config.endpoint !== TENDER.v3Endpoint) {
+        throw safeApiError_('NATIONAL_EVIDENCE_DEFAULT_SOURCE_REQUIRED');
+      }
+      apiToken_();
+      report.apiEndpoint = config.endpoint;
+      report.configurationVerified = v3RuntimeIssues_(config).length === 0 &&
+        PropertiesService.getScriptProperties().getProperty(V3_PROOF_KEY) === config.fingerprint;
+      // The existing pilot and this probe share one daily ledger under one lock.
+      // Reserve before every attempt, including failed/retried requests.
+      const shared = pilotBudget_();
+      budget = {
+        used: function () { return shared.used(); },
+        claim: function () {
+          if (Date.now() - started >= 30000) throw safeApiError_('NATIONAL_EVIDENCE_TIME_LIMIT');
+          if (shared.used() >= 4) throw safeApiError_('NATIONAL_EVIDENCE_REQUEST_LIMIT');
+          shared.claim();
+        }
+      };
+      config.requestBudget = budget;
+      const fields = selection_(Object.assign({}, V3_FIELDS, {
+        plannedMethod: 'refTradeMethodsId', actualMethod: 'refBuyTradeMethodsId',
+        planKtru: 'Plans.refEnstruCode', announcementIdentity: 'TrdBuy.id'
+      }));
+      const response = graphqlResponse_(config,
+        'query NationalEvidence($filter: LotsFiltersInput!, $limit: Int!) { ' +
+        'Lots(filter: $filter, limit: $limit) { ' + fields + ' } }',
+        {filter: {id: candidates.map(function (item) { return Number(item.lotId); })}, limit: 3});
+      if (Date.now() - started >= 30000) throw safeApiError_('NATIONAL_EVIDENCE_TIME_LIMIT');
+      const rows = response.data.Lots;
+      if (!Array.isArray(rows) || rows.length > candidates.length) {
+        throw safeApiError_('NATIONAL_EVIDENCE_RESPONSE_INVALID');
+      }
+      const expected = new Set(candidates.map(function (item) { return item.lotId; })), found = new Map();
+      // Validate the whole batch before reporting any verified candidate.
+      rows.forEach(function (row) {
+        const id = sourceId_(row && row.id);
+        if (!expected.has(id) || found.has(id)) throw safeApiError_('NATIONAL_EVIDENCE_RESPONSE_ID_MISMATCH');
+        found.set(id, row);
+      });
+      report.apiResponseValidated = true;
+      candidates.forEach(function (item) {
+        const row = found.get(item.lotId);
+        if (!row) { item.dataIssues.push('LOT_NOT_RETURNED'); return; }
+        nationalEvidenceLot_(item, row, config, report.configurationVerified);
+      });
+    }
+  } catch (e) {
+    // Never reflect API error bodies, exception text, credentials or raw objects.
+    const code = e && e.tenderSafeMessage && e.tenderSafeMessage.split(':')[0];
+    report.issue = typeof code === 'string' && /^(API|PILOT|NATIONAL)_[A-Z0-9_]+$/.test(code) ?
+      code : 'NATIONAL_EVIDENCE_CHECK_FAILED';
+  } finally { lock.releaseLock(); }
+  report.requests = budget ? budget.used() : 0;
+  report.observedAt = new Date().toISOString();
+  // Scrub values before serialization, avoiding replacement inside JSON syntax.
+  const scrub = function (value) {
+    if (typeof value === 'string') return pilotSafe_(value);
+    if (Array.isArray(value)) return value.map(scrub);
+    if (value && typeof value === 'object') {
+      const clean = {};
+      Object.keys(value).forEach(function (key) { clean[key] = scrub(value[key]); });
+      return clean;
+    }
+    if (typeof value === 'number' && pilotSafe_(String(value)).includes('[REDACTED]')) return null;
+    return value;
+  };
+  const result = scrub(report);
+  console.log(JSON.stringify(result));
+  return result;
+}
+
+/** Strict bounded data checks; these are internal report fields, not API fields. */
+function nationalEvidenceLot_(item, row, config, configurationVerified) {
+  const text = function (value) { return typeof value === 'string' ? pilotSafe_(value).slice(0, 160) : null; };
+  item.lotNumber = text(row.lotNumber);
+  item.status = row.RefLotsStatus && text(row.RefLotsStatus.code) || null;
+  item.amountKzt = typeof row.amount === 'number' && Number.isFinite(row.amount) ? row.amount : null;
+  item.quantity = typeof row.count === 'number' && Number.isFinite(row.count) ? row.count : null;
+  item.plannedMethodId = Number.isInteger(row.refTradeMethodsId) && row.refTradeMethodsId > 0 ? row.refTradeMethodsId : null;
+  item.actualMethodId = Number.isInteger(row.refBuyTradeMethodsId) && row.refBuyTradeMethodsId > 0 ? row.refBuyTradeMethodsId : null;
+  item.publishedRaw = row.TrdBuy && text(row.TrdBuy.publishDate) || null;
+  if (row.isDeleted !== 0) item.dataIssues.push(row.isDeleted === 1 ? 'LOT_DELETED' : 'DELETION_FLAG_UNVERIFIED');
+  if (item.amountKzt === null || item.amountKzt < 0 || item.amountKzt > TENDER.maxAmount ||
+      item.quantity === null || item.quantity <= 0) item.dataIssues.push('LOT_VALUES_NOT_ELIGIBLE');
+  if (!Number.isInteger(row.trdBuyId) || row.trdBuyId < 1 || !row.TrdBuy || row.TrdBuy.id !== row.trdBuyId) {
+    item.dataIssues.push('ANNOUNCEMENT_ID_UNVERIFIED');
+  }
+  if (!item.plannedMethodId || !item.actualMethodId) item.dataIssues.push('METHOD_IDS_UNVERIFIED');
+  const points = row.pointList, plans = row.Plans;
+  const coverage = Array.isArray(points) && points.length > 0 && points.length <= 30 &&
+    points.every(function (id) { return Number.isInteger(id) && id > 0 && id <= 2147483647; }) &&
+    new Set(points).size === points.length && Array.isArray(plans) && plans.length === points.length &&
+    plans.every(function (plan) { return plan && points.includes(plan.id) && plan.refSubjectTypeId === 1 &&
+      typeof plan.refEnstruCode === 'string' && plan.refEnstruCode.length <= 80 &&
+      /^[0-9]+(?:\.[0-9]+)*$/.test(plan.refEnstruCode); }) &&
+    new Set(plans.map(function (plan) { return plan.id; })).size === points.length;
+  if (coverage) {
+    item.planCoverageVerified = true;
+    item.ktruCodes = Array.from(new Set(plans.map(function (plan) { return plan.refEnstruCode; }))).sort();
+  } else item.dataIssues.push('GOODS_PLANS_KTRU_COVERAGE_UNVERIFIED');
+  if (!configurationVerified) item.dataIssues.push('RUNTIME_CONFIGURATION_UNVERIFIED');
+  if (!item.dataIssues.length) {
+    const classified = pilotClassify_(row, config);
+    if (classified.kind !== 'ELIGIBLE_GOODS' || !classified.lot.isActive ||
+        !classified.lot.applicationStart || !classified.lot.deadline ||
+        Date.parse(classified.lot.publishedAt) > Date.now() ||
+        Date.parse(classified.lot.applicationStart) > Date.now() || Date.parse(classified.lot.deadline) <= Date.now()) {
+      item.dataIssues.push(classified.reason || 'ACCEPTANCE_WINDOW_OR_STATUS_UNVERIFIED');
+    } else item.classification = 'ELIGIBLE_GOODS';
+  }
+  // Neither a complete KTRU, a method, nor a runtime configuration proof can
+  // change nationalRegime/decision. Current authoritative lot proof is absent.
+}
