@@ -1654,6 +1654,79 @@ test('national evidence supports explicit one to three IDs and never scans regis
   assert.deepEqual(JSON.parse(h.fetchCalls[0].options.payload).variables.filter,{id:[43544048]});
 });
 
+test('national evidence exposes bound announcement and raw state context without national proof',()=>{
+  const {h,raw,state}=nationalEvidenceFixture(),before=state();nationalReply(h,raw);
+  const report=h.c.inspectTenderNationalEvidence(),item=report.items[0];assertNationalHold(report);
+  assert.equal(item.announcementId,raw[0].trdBuyId);
+  assert.equal(item.announcementNumber,raw[0].trdBuyNumberAnno);
+  assert.equal(item.announcementIdentityVerified,true);
+  assert.equal(item.statusId,raw[0].refLotStatusId);
+  for(const [output,source] of [['publishedRaw','publishDate'],['applicationStartRaw','startDate'],
+    ['applicationEndRaw','endDate'],['repeatStartRaw','repeatStartDate'],['repeatEndRaw','repeatEndDate']]){
+    assert.equal(item[output],raw[0].TrdBuy[source]||null);
+  }
+  assert.equal(item.lotUpdatedRaw,raw[0].lastUpdateDate);
+  assert.equal(item.lotIndexedRaw,raw[0].indexDate);
+  assert.match(item.apiContextSha256,/^[a-f0-9]{64}$/);
+  assert.equal(item.contextFingerprintScope,'REDACTED_DIAGNOSTIC_FIELDS_NOT_DOCUMENT_VERSION');
+  assert.deepEqual(state(),before);assert.equal(h.fetchCalls.length,1);
+  const query=JSON.parse(h.fetchCalls[0].options.payload).query;
+  assert.match(query,/\blastUpdateDate\b/);assert.match(query,/\bindexDate\b/);
+});
+
+for(const change of ['status','actual method','deadline','announcement','index date']){
+  test('national context fingerprint detects '+change+' but never grants national clearance',()=>{
+    const {h,raw}=nationalEvidenceFixture();nationalReply(h,raw);
+    const first=h.c.inspectTenderNationalEvidence();assertNationalHold(first);
+    const row=raw[0];
+    if(change==='status')row.RefLotsStatus.code='ResultNotCompleted';
+    if(change==='actual method')row.refBuyTradeMethodsId=3;
+    if(change==='deadline')row.TrdBuy.endDate='2026-10-10 09:00:00';
+    if(change==='announcement'){row.trdBuyId=556;row.TrdBuy.id=556;row.trdBuyNumberAnno='SYNTHETIC-556-1';}
+    if(change==='index date')row.indexDate='2026-10-09 05:30:01';
+    nationalReply(h,raw);const second=h.c.inspectTenderNationalEvidence();assertNationalHold(second);
+    assert.notEqual(first.items[0].apiContextSha256,second.items[0].apiContextSha256);
+    assert.equal(first.items[1].apiContextSha256,second.items[1].apiContextSha256);
+  });
+}
+
+test('national context rejects wrong announcement binding and preserves unavailable dates as null',()=>{
+  const {h,raw}=nationalEvidenceFixture();raw[0].TrdBuy.id=999;
+  delete raw[0].lastUpdateDate;delete raw[0].indexDate;raw[0].TrdBuy.repeatEndDate=null;
+  nationalReply(h,raw);const report=h.c.inspectTenderNationalEvidence();assertNationalHold(report);
+  assert.equal(report.items[0].announcementIdentityVerified,false);
+  assert.equal(report.items[0].classification,'UNVERIFIED');
+  assert.ok(report.items[0].dataIssues.includes('ANNOUNCEMENT_ID_UNVERIFIED'));
+  for(const key of ['lotUpdatedRaw','lotIndexedRaw','repeatEndRaw'])assert.equal(report.items[0][key],null);
+});
+
+test('national context redacts secrets before hashing as well as before logging',()=>{
+  const {h,raw}=nationalEvidenceFixture();h.properties.set('GOSZAKUP_TOKEN','SYNTHETIC_CONTEXT_SECRET');
+  raw[0].trdBuyNumberAnno='SYNTHETIC_CONTEXT_SECRET';raw[0].indexDate='SYNTHETIC_CONTEXT_SECRET';
+  nationalReply(h,raw);const first=h.c.inspectTenderNationalEvidence();assertNationalHold(first);
+  assert.equal(first.items[0].announcementNumber,'[REDACTED]');
+  assert.equal(first.items[0].lotIndexedRaw,'[REDACTED]');
+  h.properties.set('GOSZAKUP_TOKEN','OTHER_SYNTHETIC_SECRET');
+  raw[0].trdBuyNumberAnno='OTHER_SYNTHETIC_SECRET';raw[0].indexDate='OTHER_SYNTHETIC_SECRET';
+  nationalReply(h,raw);const second=h.c.inspectTenderNationalEvidence();assertNationalHold(second);
+  assert.equal(first.items[0].apiContextSha256,second.items[0].apiContextSha256);
+  assert.equal(JSON.stringify(first).includes('SYNTHETIC_CONTEXT_SECRET'),false);
+  assert.equal(JSON.stringify(second).includes('OTHER_SYNTHETIC_SECRET'),false);
+});
+
+for(const reason of ['Нет after prior failed ZCP','expired law','stale code list','contradictory owner status']){
+  test('national evidence ignores unverified owner clearance: '+reason,()=>{
+    const {h,raw,state}=nationalEvidenceFixture();
+    // SYNTHETIC owner input/legacy formula, not an authoritative current flag.
+    h.sheets.get('NATIONAL_GATE').rows[1].splice(6,6,'НЕТ',
+      'https://goszakup.gov.kz/synthetic-unverified-proof','2020-01-01',reason,
+      '=IF(G2="НЕТ","PASS_TO_TS","HOLD_NATIONAL")','Preserve owner note');
+    const before=state();nationalReply(h,raw);
+    const report=h.c.inspectTenderNationalEvidence();assertNationalHold(report);
+    assert.deepEqual(state(),before);
+  });
+}
+
 for(const bad of [[],[1,2,3,4],[43543910,'43543910'],['043543910'],[0],[-1],[2147483648],[1.1],['abc'],null]){
   test('national evidence rejects malformed selection '+JSON.stringify(bad)+' before any side effect',()=>{
     const {h,state}=nationalEvidenceFixture(),before=state();
@@ -2131,4 +2204,49 @@ test('national source inventory retains actual legal clauses but never grants lo
   const blocked=inventory.blockedSources.find(s=>s.proxyConnectStatus===403);
   assert.equal(blocked.httpStatus,null);
   assert.equal(blocked.tokenValidityDetermined,false);
+});
+
+test('Issue 22 observations retain separate owner API and public portal provenance without lot proof',()=>{
+  const data=JSON.parse(fs.readFileSync(path.join(root,'docs/national/issue22-observations.json'),'utf8'));
+  assert.equal(data.purpose,'RESEARCH_ONLY_NOT_CURRENT_NATIONAL_PROOF');
+  assert.equal(data.currentNationalProofVerified,false);
+  assert.equal(data.allowedFreshnessPolicyApproved,false);
+  assert.equal(data.publicRequests.documentedNationalFlagApiVerified,false);
+  assert.equal(data.publicRequests.appsScriptNetworkAccessVerified,false);
+  assert.equal(data.publicRequests.credentialsSent,false);
+  assert.equal(data.ownerReports.schema.rawSchemaResponseAvailable,false);
+  assert.equal(data.ownerReports.lots.rawApiResponseAvailable,false);
+  assert.equal(Object.values(data.ownerReports.schema.fieldCounts).reduce((a,b)=>a+b,0),186);
+  assert.deepEqual(data.lots.map(v=>[v.lotId,v.announcementNumber]),[
+    ['43543910','17757379-1'],['43544048','17757453-1'],['43544131','17757463-1']]);
+  for(const lot of data.lots){
+    assert.equal(lot.decision,'HOLD_NATIONAL');assert.equal(lot.nationalRegime,'UNVERIFIED');
+    assert.equal(lot.nationalProofUrl,null);assert.ok(lot.amountKzt<=10000000);
+    assert.equal(lot.apiFactsOrigin,'OWNER_REPORT_NOT_AGENT_AUTHENTICATED_QUERY');
+  }
+  for(const source of data.sources){
+    assert.match(source.url,/^https:\/\/(?:old\.)?(?:goszakup\.gov\.kz|adilet\.zan\.kz)\/|^https:\/\/wiki\.goszakup\.gov\.kz\//);
+    assert.match(source.bodySha256,/^[a-f0-9]{64}$/);assert.ok(Number.isFinite(Date.parse(source.capturedAt)));
+  }
+  const sources=new Map(data.sources.map(s=>[s.key,s]));
+  assert.equal(sources.get('lot-43543910').httpStatus,503);
+  assert.equal(sources.get('lot-43543910').nationalFlagFound,null);
+  assert.equal(sources.get('announcement-lots-17757453').uiDataLotIdIsLotsId,false);
+});
+
+test('Issue 22 failed-ZCP exception and expired/incomplete annex research do not manufacture clearance',()=>{
+  const data=JSON.parse(fs.readFileSync(path.join(root,'docs/national/issue22-observations.json'),'utf8'));
+  const sources=new Map(data.sources.map(s=>[s.key,s]));
+  assert.equal(sources.get('creation-wiki').scope,'TENDER_DRAFT_NOT_ZCP_CURRENT_LOT');
+  assert.match(sources.get('zcp-participation-wiki').excerpt,/закупка, которая не состоялась/);
+  const prior=sources.get('prior-battery-lot');
+  assert.equal(prior.lotId,'43473903');assert.equal(prior.statusRuMeaning,'Закупка не состоялась');
+  assert.equal(prior.nationalFlagFound,false);
+  assert.equal(sources.get('law190-publication').firstOfficialPublication,'2024-03-18');
+  assert.match(sources.get('law190').durationClause,/двух лет/);
+  assert.equal(sources.get('law190').usableAloneForOctober2026,false);
+  assert.equal(sources.get('archive-annex190').currentVersionAndLegalBindingVerified,false);
+  assert.equal(sources.get('law314').separateApprovedKtruAnnexVerified,false);
+  assert.equal(data.legalAnnexInventoryComplete,false);
+  assert.equal(data.lots.find(v=>v.lotId==='43544131').decision,'HOLD_NATIONAL');
 });

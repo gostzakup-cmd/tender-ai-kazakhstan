@@ -903,7 +903,8 @@ function inspectTenderNationalEvidence(lotIds) {
       config.requestBudget = budget;
       const fields = selection_(Object.assign({}, V3_FIELDS, {
         plannedMethod: 'refTradeMethodsId', actualMethod: 'refBuyTradeMethodsId',
-        planKtru: 'Plans.refEnstruCode', announcementIdentity: 'TrdBuy.id'
+        planKtru: 'Plans.refEnstruCode', announcementIdentity: 'TrdBuy.id',
+        lotUpdated: 'lastUpdateDate', lotIndexed: 'indexDate'
       }));
       const response = graphqlResponse_(config,
         'query NationalEvidence($filter: LotsFiltersInput!, $limit: Int!) { ' +
@@ -974,16 +975,26 @@ function nationalSafeReport_(report) {
 function nationalEvidenceLot_(item, row, config, configurationVerified) {
   const text = function (value) { return typeof value === 'string' ? pilotSafe_(value).slice(0, 160) : null; };
   item.lotNumber = text(row.lotNumber);
+  item.announcementId = Number.isInteger(row.trdBuyId) && row.trdBuyId > 0 && row.trdBuyId <= 2147483647 ? row.trdBuyId : null;
+  item.announcementNumber = text(row.trdBuyNumberAnno);
+  item.announcementIdentityVerified = item.announcementId !== null && !!row.TrdBuy && row.TrdBuy.id === item.announcementId;
   item.status = row.RefLotsStatus && text(row.RefLotsStatus.code) || null;
+  item.statusId = Number.isInteger(row.refLotStatusId) && row.refLotStatusId > 0 ? row.refLotStatusId : null;
   item.amountKzt = typeof row.amount === 'number' && Number.isFinite(row.amount) ? row.amount : null;
   item.quantity = typeof row.count === 'number' && Number.isFinite(row.count) ? row.count : null;
   item.plannedMethodId = Number.isInteger(row.refTradeMethodsId) && row.refTradeMethodsId > 0 ? row.refTradeMethodsId : null;
   item.actualMethodId = Number.isInteger(row.refBuyTradeMethodsId) && row.refBuyTradeMethodsId > 0 ? row.refBuyTradeMethodsId : null;
   item.publishedRaw = row.TrdBuy && text(row.TrdBuy.publishDate) || null;
+  item.applicationStartRaw = row.TrdBuy && text(row.TrdBuy.startDate) || null;
+  item.applicationEndRaw = row.TrdBuy && text(row.TrdBuy.endDate) || null;
+  item.repeatStartRaw = row.TrdBuy && text(row.TrdBuy.repeatStartDate) || null;
+  item.repeatEndRaw = row.TrdBuy && text(row.TrdBuy.repeatEndDate) || null;
+  item.lotUpdatedRaw = text(row.lastUpdateDate);
+  item.lotIndexedRaw = text(row.indexDate);
   if (row.isDeleted !== 0) item.dataIssues.push(row.isDeleted === 1 ? 'LOT_DELETED' : 'DELETION_FLAG_UNVERIFIED');
   if (item.amountKzt === null || item.amountKzt < 0 || item.amountKzt > TENDER.maxAmount ||
       item.quantity === null || item.quantity <= 0) item.dataIssues.push('LOT_VALUES_NOT_ELIGIBLE');
-  if (!Number.isInteger(row.trdBuyId) || row.trdBuyId < 1 || !row.TrdBuy || row.TrdBuy.id !== row.trdBuyId) {
+  if (!item.announcementIdentityVerified) {
     item.dataIssues.push('ANNOUNCEMENT_ID_UNVERIFIED');
   }
   if (!item.plannedMethodId || !item.actualMethodId) item.dataIssues.push('METHOD_IDS_UNVERIFIED');
@@ -1009,6 +1020,18 @@ function nationalEvidenceLot_(item, row, config, configurationVerified) {
       item.dataIssues.push(classified.reason || 'ACCEPTANCE_WINDOW_OR_STATUS_UNVERIFIED');
     } else item.classification = 'ELIGIBLE_GOODS';
   }
+  // A replay comparison of bounded, redacted context, NOT a raw response hash,
+  // document version, timezone proof or national-regime evidence. Omit the
+  // observation time so an unchanged context has an unchanged fingerprint.
+  const context = {};
+  ['lotId', 'lotNumber', 'announcementId', 'announcementNumber', 'announcementIdentityVerified',
+    'status', 'statusId', 'plannedMethodId', 'actualMethodId', 'amountKzt', 'quantity',
+    'publishedRaw', 'applicationStartRaw', 'applicationEndRaw', 'repeatStartRaw', 'repeatEndRaw',
+    'lotUpdatedRaw', 'lotIndexedRaw', 'planCoverageVerified', 'ktruCodes'].forEach(function (key) {
+      context[key] = item[key];
+    });
+  item.apiContextSha256 = fingerprint_(JSON.stringify(nationalSafeReport_(context)));
+  item.contextFingerprintScope = 'REDACTED_DIAGNOSTIC_FIELDS_NOT_DOCUMENT_VERSION';
   // Neither a complete KTRU, a method, nor a runtime configuration proof can
   // change nationalRegime/decision. Current authoritative lot proof is absent.
 }
