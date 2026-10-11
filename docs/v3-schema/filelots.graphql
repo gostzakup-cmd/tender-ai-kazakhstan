@@ -1,0 +1,19 @@
+# Source: https://ows.goszakup.gov.kz/help/v3/schema/filelots.doc.html
+type FileLots {
+  # ID
+  id: Int
+  # Путь до файла
+  filePath: String
+  # Оригинальное имя файла
+  originalName: String
+  # ID объекта
+  objectId: Int
+  # Наименование документа на русском языке
+  nameRu: String
+  # Наименование документа на государственном языке
+  nameKz: String
+  # Дата индексации
+  indexDate: String
+  # Уникальный идентификатор системы
+  systemId: Int
+}

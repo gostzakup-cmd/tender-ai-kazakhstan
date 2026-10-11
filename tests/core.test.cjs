@@ -1870,6 +1870,166 @@ test('national evidence detects timeout after a slow response and redacts token 
   assert.ok(r.items[0].lotNumber.includes('[REDACTED]'));
 });
 
+// File metadata fixtures are SYNTHETIC, not owner API evidence or real file IDs.
+function nationalFileFixture(id=9000001){
+  return {id,objectId:777,originalName:'SYNTHETIC.pdf',nameRu:'Synthetic document',
+    nameKz:null,indexDate:'2026-10-08 04:00:00',systemId:3};
+}
+
+test('optional document diagnostic requests only documented metadata in the existing bounded API call',()=>{
+  const {h,raw,state}=nationalEvidenceFixture(),before=state();
+  raw.forEach(row=>row.Files=[nationalFileFixture()]);nationalReply(h,raw);
+  const report=h.c.inspectTenderNationalDocumentEvidence();assertNationalHold(report);
+  assert.equal(report.documentMetadataRequested,true);assert.equal(report.requests,1);
+  assert.equal(h.fetchCalls.length,1);assert.deepEqual(state(),before);
+  for(const item of report.items){
+    const files=item.documentMetadata;
+    assert.equal(files.parentLotId,item.lotId);assert.equal(files.sourcePath,'Lots.Files');
+    assert.equal(files.state,'METADATA_ONLY');assert.equal(files.files.length,1);
+    assert.equal(files.objectIdSemanticsVerified,false);assert.equal(files.currentVersionVerified,false);
+    assert.equal(files.nationalProof,false);
+  }
+  const call=h.fetchCalls[0],payload=JSON.parse(call.options.payload);
+  assert.equal(call.url,'https://ows.goszakup.gov.kz/v3/graphql');
+  assert.deepEqual(payload.variables,{filter:{id:[43543910,43544048,43544131]},limit:3});
+  assert.equal(call.options.followRedirects,false);assert.equal(call.options.validateHttpsCertificates,true);
+  assert.match(payload.query,/Files\s*\{/);assert.equal(payload.query.includes('filePath'),false);
+  const sdl=fs.readFileSync(path.join(root,'docs/v3-schema/filelots.graphql'),'utf8');
+  for(const path of Object.values(h.c.nationalDocumentFields_())){
+    assert.match(path,/^Files\.[A-Za-z]+$/);
+    assert.ok(sdl.includes(path.split('.')[1]+':'));
+  }
+});
+
+test('default national probe does not request document metadata or change its default log format',()=>{
+  const {h,raw}=nationalEvidenceFixture(),logs=[];h.c.console.log=line=>logs.push(line);
+  nationalReply(h,raw);const report=h.c.inspectTenderNationalEvidence();assertNationalHold(report);
+  assert.equal(report.documentMetadataRequested,false);
+  assert.equal(JSON.parse(h.fetchCalls[0].options.payload).query.includes('Files'),false);
+  assert.equal(report.items[0].documentMetadata,undefined);
+  assert.deepEqual(JSON.parse(logs[0]),json(report));
+});
+
+for(const option of ['true',1,null,{}]){
+  test('document metadata opt-in rejects ambiguous option '+JSON.stringify(option)+' before I/O',()=>{
+    const {h,state}=nationalEvidenceFixture(),before=state();
+    assert.throws(()=>h.c.inspectTenderNationalEvidence(undefined,option),/DOCUMENT_OPTION_INVALID/);
+    assert.equal(h.fetchCalls.length,0);assert.deepEqual(state(),before);
+  });
+}
+
+for(const scenario of ['missing','null','not array','over limit','duplicate ID','missing field','invalid object ID','long name']){
+  test('document metadata fails closed for '+scenario+' and leaves national regime unknown',()=>{
+    const {h,raw,state}=nationalEvidenceFixture(),before=state();raw[0].Files=[nationalFileFixture()];
+    if(scenario==='missing')delete raw[0].Files;
+    if(scenario==='null')raw[0].Files=null;
+    if(scenario==='not array')raw[0].Files={id:9000001};
+    if(scenario==='over limit')raw[0].Files=Array.from({length:11},(_,i)=>nationalFileFixture(9000001+i));
+    if(scenario==='duplicate ID')raw[0].Files.push(nationalFileFixture());
+    if(scenario==='missing field')delete raw[0].Files[0].indexDate;
+    if(scenario==='invalid object ID')raw[0].Files[0].objectId='777';
+    if(scenario==='long name')raw[0].Files[0].originalName='x'.repeat(513);
+    nationalReply(h,raw);const report=h.c.inspectTenderNationalDocumentEvidence();assertNationalHold(report);
+    const metadata=report.items[0].documentMetadata;
+    assert.equal(metadata.state,'UNVERIFIED');assert.ok(metadata.issue);
+    assert.deepEqual(json(metadata.files),[]);assert.deepEqual(state(),before);
+    assert.equal(h.fetchCalls.length,1);
+  });
+}
+
+test('empty API Files and different object ID never prove absence, version or national permission',()=>{
+  const {h,raw}=nationalEvidenceFixture();raw[0].Files=[];
+  raw[1].Files=[{...nationalFileFixture(),objectId:999}];nationalReply(h,raw);
+  const report=h.c.inspectTenderNationalDocumentEvidence();assertNationalHold(report);
+  assert.equal(report.items[0].documentMetadata.state,'EMPTY_API_RELATION');
+  assert.equal(report.items[0].documentMetadata.currentVersionVerified,false);
+  assert.equal(report.items[1].documentMetadata.files[0].objectId,999);
+  assert.equal(report.items[1].documentMetadata.objectIdSemanticsVerified,false);
+});
+
+test('document reports redact before chunking and omit extra URLs or arbitrary raw fields',()=>{
+  const {h,raw}=nationalEvidenceFixture(),logs=[];
+  h.c.console.log=line=>logs.push(line);h.properties.set('GOSZAKUP_TOKEN','SYNTHETIC_FILE_SECRET');
+  raw.forEach(row=>{row.Files=Array.from({length:10},(_,i)=>({...nationalFileFixture(9000001+i),
+    nameRu:'x'.repeat(400)+'SYNTHETIC_FILE_SECRET',
+    filePath:'https://attacker.invalid/?secret=SYNTHETIC_FILE_SECRET',unexpected:'RAW_FIELD'}));});
+  nationalReply(h,raw);const report=h.c.inspectTenderNationalDocumentEvidence();assertNationalHold(report);
+  assert.ok(logs.length>1);
+  const reassembled=logs.map((line,i)=>{
+    const prefix='NATIONAL_DOCUMENT_JSON_PART_'+(i+1)+': ';
+    assert.ok(line.startsWith(prefix));assert.ok(line.length-prefix.length<=4000);
+    return line.slice(prefix.length);
+  }).join('');
+  assert.deepEqual(JSON.parse(reassembled),json(report));
+  for(const forbidden of ['SYNTHETIC_FILE_SECRET','attacker.invalid','RAW_FIELD','filePath'])assert.equal(reassembled.includes(forbidden),false);
+});
+
+test('optional file metadata keeps HTTP failures bounded and cannot alter cursors, Sheets or gates',()=>{
+  const {h,state}=nationalEvidenceFixture(),before=state();
+  h.responses.push(...Array(4).fill({status:503,body:'SYNTHETIC_FILE_SECRET'}));
+  const report=h.c.inspectTenderNationalDocumentEvidence();assertNationalHold(report);
+  assert.equal(report.requests,4);assert.equal(h.fetchCalls.length,4);assert.deepEqual(state(),before);
+  assert.equal(report.apiResponseValidated,false);
+  assert.throws(()=>h.c.syncTenderLots(),/FULL_SCAN_DISABLED/);
+  assert.throws(()=>h.c.installDailyTrigger(),/FULL_SCAN_DISABLED/);
+});
+
+test('document observations retain real PDF identity evidence without national or version verdict',()=>{
+  const data=JSON.parse(fs.readFileSync(path.join(root,'docs/national/issue22-document-observations.json'),'utf8'));
+  assert.equal(data.purpose,'DOCUMENT_PROVENANCE_RESEARCH_NOT_NATIONAL_CLEARANCE');
+  assert.equal(data.decision,'HOLD_NATIONAL');assert.equal(data.currentNationalProofVerified,false);
+  assert.equal(data.liveFileLotsApiResponseObtained,false);assert.equal(data.approvedFreshnessPolicy,null);
+  const sources=new Map(data.sources.map(s=>[s.key,s])),pdf=sources.get('original-technical-pdf');
+  assert.deepEqual(pdf.headerNumbers,{announcement:'17757453-1',lot:'88138120-ЗЦП1'});
+  assert.equal(pdf.byteLength,27648);assert.equal(pdf.pages,2);assert.equal(pdf.nationalFlagFound,false);
+  assert.equal(pdf.currentDocumentVersionVerified,false);
+  assert.equal(pdf.downloadPathSegmentSemanticsVerified,false);
+  assert.equal(sources.get('technical-document-list').signatureVerified,false);
+  assert.equal(sources.get('announcement-documents').unrelatedYesNoCellsAreNotNationalProof,true);
+  assert.equal(sources.get('public-filelots-schema').objectIdSemanticsVerified,false);
+  for(const source of data.sources)assert.match(source.bodySha256,/^[a-f0-9]{64}$/);
+});
+
+test('owner-provided SPA and timeout observations do not count as an API response or lot permission',()=>{
+  const data=JSON.parse(fs.readFileSync(path.join(root,'docs/national/issue22-document-observations.json'),'utf8'));
+  const sources=new Map(data.sources.map(s=>[s.key,s])),owner=sources.get('owner-provided-cabinet');
+  assert.equal(owner.announcementIdFromUrl,'17745515');
+  assert.equal(owner.sameAsThreeTargetAnnouncements,false);
+  assert.equal(owner.announcementContentRead,false);assert.equal(owner.nationalFlagFound,null);
+  assert.equal(data.blockedDataReads.length,2);
+  for(const read of data.blockedDataReads){
+    assert.equal(read.httpStatus,null);assert.equal(read.curlExitCode,28);assert.equal(read.bytesReceived,0);
+    assert.equal(read.responseShapeVerified,false);assert.equal(read.nationalFlagVerified,false);
+    assert.equal(read.tokenValidityDetermined,false);
+  }
+});
+
+test('owner screenshot confirms a UI flag but cannot be assigned to an unidentified or different lot',()=>{
+  const data=JSON.parse(fs.readFileSync(path.join(root,'docs/national/issue22-document-observations.json'),'utf8'));
+  const screenshot=data.ownerScreenshot;
+  assert.equal(screenshot.announcementIdFromUrl,'17745688');
+  assert.equal(screenshot.columnLabel,'Изъятие из национального режима');assert.equal(screenshot.flagVisible,'Да');
+  assert.equal(screenshot.lotNumberVisible,null);assert.equal(screenshot.lotsIdVerified,null);
+  assert.equal(screenshot.observedAtUtc,null);assert.equal(screenshot.imageSha256,null);
+  assert.equal(screenshot.originalStoredInGit,false);
+  assert.equal(screenshot.currentTargetLotBindingVerified,false);
+  assert.equal(screenshot.decisionForThreeTargets,'HOLD_NATIONAL');
+  const renderer=data.sources.find(s=>s.key==='observed-national-column-renderer');
+  assert.equal(renderer.translationKey,'registry.nationalWithdrawal');
+  assert.equal(renderer.owsGraphqlFieldVerified,false);assert.equal(renderer.liveApiResponseShapeVerified,false);
+  assert.equal(renderer.rowValueExpression,'row.__planPoint.national_withdrawn ?? lot.national_withdrawn');
+});
+
+test('a frontend national_withdrawn key is never queried as an OWS field or accepted as current lot proof',()=>{
+  const {h,raw}=nationalEvidenceFixture();
+  // Deliberately inject a UI-only, unexpected key into SYNTHETIC OWS rows.
+  raw[0].national_withdrawn=true;raw[1].national_withdrawn=false;
+  raw.forEach(row=>row.Files=[nationalFileFixture()]);nationalReply(h,raw);
+  const report=h.c.inspectTenderNationalDocumentEvidence();assertNationalHold(report);
+  assert.equal(JSON.parse(h.fetchCalls[0].options.payload).query.includes('national_withdrawn'),false);
+  assert.equal(JSON.stringify(report).includes('national_withdrawn'),false);
+});
+
 test('national evidence replay changes only attempt ledger and cannot unblock full sync or trigger',()=>{
   const {h,raw,state}=nationalEvidenceFixture(),before=state();nationalReply(h,raw);nationalReply(h,raw);
   const first=json(h.c.inspectTenderNationalEvidence()),second=json(h.c.inspectTenderNationalEvidence());

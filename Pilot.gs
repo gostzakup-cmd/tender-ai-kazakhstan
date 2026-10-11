@@ -831,7 +831,10 @@ function inspectTenderNationalKtru() {
  * No national-regime API field/source is verified: every result stays HOLD.
  * This is not a portal scraper, national classifier, pilot run or TS runner.
  */
-function inspectTenderNationalEvidence(lotIds) {
+function inspectTenderNationalEvidence(lotIds, includeDocumentMetadata) {
+  if (includeDocumentMetadata !== undefined && typeof includeDocumentMetadata !== 'boolean') {
+    throw safeApiError_('NATIONAL_EVIDENCE_DOCUMENT_OPTION_INVALID');
+  }
   const selected = lotIds === undefined ? [43543910, 43544048, 43544131] : lotIds;
   if (!Array.isArray(selected) || !selected.length || selected.length > 3 ||
       selected.some(function (id) {
@@ -846,6 +849,7 @@ function inspectTenderNationalEvidence(lotIds) {
     mode: 'API_READ_ONLY_QUOTA_ACCOUNTED', observedAt: new Date().toISOString(),
     apiEndpoint: null, requests: 0, apiResponseValidated: false,
     configurationVerified: false, nationalSourceVerified: false,
+    documentMetadataRequested: includeDocumentMetadata === true,
     readyToSkip: false, readyToPassToTs: false, noSheetChanges: true,
     quotaAccountingOnly: true, watermarkAdvanced: false, mvpReady: false,
     countryCoverageVerified: false, dailyCoverageVerified: false,
@@ -901,7 +905,8 @@ function inspectTenderNationalEvidence(lotIds) {
       // Reserve before every attempt, including failed/retried requests.
       budget = nationalProbeBudget_(started);
       config.requestBudget = budget;
-      const fields = selection_(Object.assign({}, V3_FIELDS, {
+      const fields = selection_(Object.assign({}, V3_FIELDS,
+        includeDocumentMetadata === true ? nationalDocumentFields_() : {}, {
         plannedMethod: 'refTradeMethodsId', actualMethod: 'refBuyTradeMethodsId',
         planKtru: 'Plans.refEnstruCode', announcementIdentity: 'TrdBuy.id',
         lotUpdated: 'lastUpdateDate', lotIndexed: 'indexDate'
@@ -927,6 +932,7 @@ function inspectTenderNationalEvidence(lotIds) {
         const row = found.get(item.lotId);
         if (!row) { item.dataIssues.push('LOT_NOT_RETURNED'); return; }
         nationalEvidenceLot_(item, row, config, report.configurationVerified);
+        if (includeDocumentMetadata === true) nationalDocumentMetadata_(item, row.Files);
       });
     }
   } catch (e) {
@@ -938,7 +944,12 @@ function inspectTenderNationalEvidence(lotIds) {
   report.requests = budget ? budget.used() : 0;
   report.observedAt = new Date().toISOString();
   const result = nationalSafeReport_(report);
-  console.log(JSON.stringify(result));
+  const json = JSON.stringify(result);
+  if (includeDocumentMetadata === true) {
+    for (let offset = 0; offset < json.length; offset += 4000) {
+      console.log('NATIONAL_DOCUMENT_JSON_PART_' + (offset / 4000 + 1) + ': ' + json.slice(offset, offset + 4000));
+    }
+  } else console.log(json);
   return result;
 }
 
@@ -1137,4 +1148,49 @@ function nationalSchemaRef_(ref, depth) {
     throw safeApiError_('NATIONAL_SCHEMA_REF_UNVERIFIED');
   }
   return ref.name;
+}
+
+/** Manual metadata-only probe; no document download, PDF/AI analysis or verdict. */
+function inspectTenderNationalDocumentEvidence() {
+  return inspectTenderNationalEvidence(undefined, true);
+}
+
+/** Official FileLots SDL. No filePath: do not log signed URLs or derive routes. */
+function nationalDocumentFields_() {
+  return {documentId: 'Files.id', documentObjectId: 'Files.objectId',
+    documentOriginalName: 'Files.originalName', documentNameRu: 'Files.nameRu',
+    documentNameKz: 'Files.nameKz', documentIndexed: 'Files.indexDate',
+    documentSystemId: 'Files.systemId'};
+}
+
+function nationalDocumentMetadata_(item, files) {
+  const result = {sourcePath: 'Lots.Files', parentLotId: item.lotId,
+    state: 'UNVERIFIED', files: [], objectIdSemanticsVerified: false,
+    currentVersionVerified: false, nationalProof: false};
+  item.documentMetadata = result;
+  if (!Array.isArray(files)) { result.issue = 'FILE_METADATA_NOT_RETURNED'; return; }
+  if (files.length > 10) { result.issue = 'FILE_METADATA_LIMIT'; return; }
+  const int = function (value) { return Number.isInteger(value) && value >= -2147483648 && value <= 2147483647; };
+  const integers = ['objectId', 'systemId'], strings = ['originalName', 'nameRu', 'nameKz', 'indexDate'];
+  const ids = new Set();
+  const valid = files.every(function (file) {
+    if (!file || typeof file !== 'object' || Array.isArray(file) ||
+        !int(file.id) || file.id < 1 || ids.has(file.id)) return false;
+    ids.add(file.id);
+    return integers.every(function (key) {
+      return Object.prototype.hasOwnProperty.call(file, key) && (file[key] === null || int(file[key]));
+    }) && strings.every(function (key) {
+      return Object.prototype.hasOwnProperty.call(file, key) &&
+        (file[key] === null || typeof file[key] === 'string' && file[key].length <= 512);
+    });
+  });
+  if (!valid) { result.issue = 'FILE_METADATA_SHAPE_INVALID'; return; }
+  result.files = files.map(function (file) {
+    const clean = {id: file.id};
+    integers.concat(strings).forEach(function (key) { clean[key] = file[key]; });
+    return clean;
+  });
+  // Empty relation is not proof that the portal has no document; indexDate is
+  // not a version and objectId is not assumed to mean Lots.id or Plans.id.
+  result.state = files.length ? 'METADATA_ONLY' : 'EMPTY_API_RELATION';
 }
