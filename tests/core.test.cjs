@@ -1931,6 +1931,32 @@ test('owner-provided SPA and timeout observations do not count as an API respons
   }
 });
 
+test('owner screenshot confirms a UI flag but cannot be assigned to an unidentified or different lot',()=>{
+  const data=JSON.parse(fs.readFileSync(path.join(root,'docs/national/issue22-document-observations.json'),'utf8'));
+  const screenshot=data.ownerScreenshot;
+  assert.equal(screenshot.announcementIdFromUrl,'17745688');
+  assert.equal(screenshot.columnLabel,'Изъятие из национального режима');assert.equal(screenshot.flagVisible,'Да');
+  assert.equal(screenshot.lotNumberVisible,null);assert.equal(screenshot.lotsIdVerified,null);
+  assert.equal(screenshot.observedAtUtc,null);assert.equal(screenshot.imageSha256,null);
+  assert.equal(screenshot.originalStoredInGit,false);
+  assert.equal(screenshot.currentTargetLotBindingVerified,false);
+  assert.equal(screenshot.decisionForThreeTargets,'HOLD_NATIONAL');
+  const renderer=data.sources.find(s=>s.key==='observed-national-column-renderer');
+  assert.equal(renderer.translationKey,'registry.nationalWithdrawal');
+  assert.equal(renderer.owsGraphqlFieldVerified,false);assert.equal(renderer.liveApiResponseShapeVerified,false);
+  assert.equal(renderer.rowValueExpression,'row.__planPoint.national_withdrawn ?? lot.national_withdrawn');
+});
+
+test('a frontend national_withdrawn key is never queried as an OWS field or accepted as current lot proof',()=>{
+  const {h,raw}=nationalEvidenceFixture();
+  // Deliberately inject a UI-only, unexpected key into SYNTHETIC OWS rows.
+  raw[0].national_withdrawn=true;raw[1].national_withdrawn=false;
+  raw.forEach(row=>row.Files=[nationalFileFixture()]);nationalReply(h,raw);
+  const report=h.c.inspectTenderNationalDocumentEvidence();assertNationalHold(report);
+  assert.equal(JSON.parse(h.fetchCalls[0].options.payload).query.includes('national_withdrawn'),false);
+  assert.equal(JSON.stringify(report).includes('national_withdrawn'),false);
+});
+
 test('national evidence replay changes only attempt ledger and cannot unblock full sync or trigger',()=>{
   const {h,raw,state}=nationalEvidenceFixture(),before=state();nationalReply(h,raw);nationalReply(h,raw);
   const first=json(h.c.inspectTenderNationalEvidence()),second=json(h.c.inspectTenderNationalEvidence());
