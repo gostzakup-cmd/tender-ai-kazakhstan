@@ -1806,6 +1806,131 @@ test('national evidence replay changes only attempt ledger and cannot unblock fu
   assert.throws(()=>h.c.installDailyTrigger(),/FULL_SCAN_DISABLED/);
 });
 
+// SYNTHETIC introspection response, generated from the previously captured SDL.
+// Descriptions/deprecation flags in this fixture are test-only, not live facts.
+function nationalSchemaFixture() {
+  const {h,state}=nationalEvidenceFixture();
+  h.properties.delete('GOSZAKUP_API_DATE_TIMEZONE');
+  h.properties.delete('TENDER_V3_VERIFIED_CONFIG');
+  const data={};
+  for(const [alias,file,kind] of [['lots','lots','OBJECT'],['plans','plnpoint','OBJECT'],
+    ['announcement','trdbuy','OBJECT'],['filter','lotsfiltersinput','INPUT_OBJECT']]){
+    const sdl=fs.readFileSync(path.join(root,'docs/v3-schema',file+'.graphql'),'utf8');
+    const name=sdl.match(/^(?:type|input)\s+(\w+)/)[1];
+    const ref=type=>type.startsWith('[')?{kind:'LIST',name:null,ofType:ref(type.slice(1,-1))}:
+      {kind:['Int','Float','String','Boolean'].includes(type)?'SCALAR':'OBJECT',name:type,ofType:null};
+    const fields=sdl.split('\n').map(line=>line.match(/^(\w+):\s*(\[?\w+\]?)/)).filter(Boolean)
+      .map(m=>({name:m[1],description:null,type:ref(m[2]),...(kind==='OBJECT'?{
+        isDeprecated:false,deprecationReason:null}:{})}));
+    data[alias]={name,kind,[kind==='OBJECT'?'fields':'inputFields']:fields};
+  }
+  return {h,state,data};
+}
+function schemaReply(h,data){h.responses.push({status:200,body:JSON.stringify({data})});}
+
+test('national schema discovers actual SDL names using only standard introspection and no config readiness',()=>{
+  const {h,state,data}=nationalSchemaFixture(),before=state();schemaReply(h,data);
+  const r=h.c.inspectTenderNationalSchema();
+  assert.equal(r.introspectionShapeVerified,true);assert.equal(r.nationalFieldVerified,false);
+  assert.equal(r.decision,'HOLD_NATIONAL');assert.equal(r.requests,1);assert.equal(r.mvpReady,false);
+  assert.deepEqual(state(),before);assert.equal(JSON.parse(h.properties.get('TENDER_PILOT_QUOTA')).length,1);
+  assert.equal(h.properties.has('TENDER_V3_VERIFIED_CONFIG'),false);
+  assert.deepEqual(json(r.types.map(t=>t.name)),['Lots','PlnPoint','TrdBuy','LotsFiltersInput']);
+  const fields=r.types.find(t=>t.name==='PlnPoint').fields;
+  assert.equal(fields.find(f=>f.name==='refEnstruCode').type,'String');
+  assert.equal(r.types[0].fields.find(f=>f.name==='Plans').type,'[PlnPoint]');
+  const query=JSON.parse(h.fetchCalls[0].options.payload).query;
+  assert.ok(query.includes('fields(includeDeprecated: true)'));
+  assert.equal(query.includes('Lots(filter:'),false);assert.ok(query.includes('__type'));
+  assert.equal(h.fetchCalls[0].options.followRedirects,false);
+});
+
+test('national schema labels metadata mentions and deprecated fields without certifying semantics or a lot',()=>{
+  const {h,data}=nationalSchemaFixture();
+  data.lots.fields[0].description='SYNTHETIC mention: изъятие из национального режима; not a verified field meaning';
+  data.lots.fields[0].isDeprecated=true;data.lots.fields[0].deprecationReason='SYNTHETIC retired';
+  schemaReply(h,data);const r=h.c.inspectTenderNationalSchema();
+  const item=r.types[0].fields.find(f=>f.name===data.lots.fields[0].name);
+  assert.equal(item.requiresSemanticReview,true);assert.equal(item.deprecated,true);
+  assert.equal(r.nationalFieldVerified,false);assert.equal(r.decision,'HOLD_NATIONAL');
+  assert.equal(r.nationalRegime,'UNVERIFIED');
+});
+
+for(const failure of ['missing type','wrong name','wrong kind','empty fields','too many fields','duplicate field',
+  'invalid field name','non-string description','invalid deprecation','invalid ref','truncated wrapper']){
+  test('national schema fails closed on '+failure+' without retaining a partial inventory',()=>{
+    const {h,state,data}=nationalSchemaFixture(),before=state();
+    if(failure==='missing type')data.filter=null;
+    if(failure==='wrong name')data.filter.name='Other';
+    if(failure==='wrong kind')data.filter.kind='OBJECT';
+    if(failure==='empty fields')data.filter.inputFields=[];
+    if(failure==='too many fields')data.filter.inputFields=Array(201).fill(data.filter.inputFields[0]);
+    if(failure==='duplicate field')data.lots.fields.push({...data.lots.fields[0]});
+    if(failure==='invalid field name')data.lots.fields[0].name='not.a.field';
+    if(failure==='non-string description')data.lots.fields[0].description={untrusted:'secret'};
+    if(failure==='invalid deprecation')data.lots.fields[0].isDeprecated='false';
+    if(failure==='invalid ref')data.lots.fields[0].type.kind='unknown';
+    if(failure==='truncated wrapper')data.lots.fields[0].type={kind:'LIST',name:null,ofType:null};
+    schemaReply(h,data);const r=h.c.inspectTenderNationalSchema();
+    assert.equal(r.introspectionShapeVerified,false);assert.equal(r.types.length,0);
+    assert.ok(r.issue.startsWith('NATIONAL_SCHEMA_'));assert.equal(r.decision,'HOLD_NATIONAL');
+    assert.deepEqual(state(),before);
+  });
+}
+
+test('national schema handles non-null/list wrappers and rejects oversized output explicitly',()=>{
+  const {h,data}=nationalSchemaFixture();
+  data.lots.fields[0].type={kind:'NON_NULL',name:null,ofType:{kind:'LIST',name:null,
+    ofType:{kind:'NON_NULL',name:null,ofType:{kind:'SCALAR',name:'Int',ofType:null}}}};
+  schemaReply(h,data);let r=h.c.inspectTenderNationalSchema();
+  assert.equal(r.types[0].fields.find(f=>f.name===data.lots.fields[0].name).type,'[Int!]!');
+  for(const t of Object.values(data))for(const f of t.fields||t.inputFields)f.description='SYNTHETIC long '.repeat(100);
+  schemaReply(h,data);r=h.c.inspectTenderNationalSchema();
+  assert.equal(r.issue,'NATIONAL_SCHEMA_OUTPUT_LIMIT');assert.equal(r.types.length,0);
+  assert.equal(r.introspectionShapeVerified,false);assert.equal(r.decision,'HOLD_NATIONAL');
+});
+
+test('national schema redacts before shortening and marks shortened descriptions as incomplete',()=>{
+  const {h,data}=nationalSchemaFixture();
+  const token='SYNTHETIC_SCHEMA_SECRET_'+'x'.repeat(200);h.properties.set('GOSZAKUP_TOKEN',token);
+  data.lots.fields[0].description=token+' tail';data.lots.fields[1].description='z'.repeat(1100);
+  schemaReply(h,data);const r=h.c.inspectTenderNationalSchema();
+  assert.equal(JSON.stringify(r).includes('SYNTHETIC_SCHEMA_SECRET_'),false);
+  const first=r.types[0].fields.find(f=>f.name===data.lots.fields[0].name);
+  const second=r.types[0].fields.find(f=>f.name===data.lots.fields[1].name);
+  assert.ok(first.description.includes('[REDACTED]'));
+  assert.equal(second.description.length,1000);assert.equal(second.descriptionComplete,false);
+  assert.equal(r.nationalFieldVerified,false);
+});
+
+test('national schema shares quota across probes and counts retry attempts without changing owner data',()=>{
+  const {h,state,data}=nationalSchemaFixture(),before=state();
+  h.properties.set('TENDER_PILOT_QUOTA',JSON.stringify(Array(198).fill(h.c.Date.now())));
+  h.responses.push({status:503,body:'untrusted'}, {status:200,body:JSON.stringify({data})});
+  let r=h.c.inspectTenderNationalSchema();assert.equal(r.requests,2);assert.equal(r.introspectionShapeVerified,true);
+  r=h.c.inspectTenderNationalSchema();assert.equal(r.issue,'PILOT_DAILY_LIMIT');
+  assert.equal(r.requests,0);assert.equal(h.fetchCalls.length,2);assert.deepEqual(state(),before);
+});
+
+for(const failure of ['CONNECT 403','HTTP 403','GraphQL error','slow response','other endpoint']){
+  test('national schema holds safely on '+failure,()=>{
+    const {h,state,data}=nationalSchemaFixture();
+    if(failure==='other endpoint')h.properties.set('GOSZAKUP_V3_ENDPOINT','https://ows.goszakup.gov.kz/test-only');
+    const before=state();
+    if(failure==='CONNECT 403')h.responses.push(new Error('CONNECT 403 REFLECTED_SECRET'));
+    if(failure==='HTTP 403')h.responses.push({status:403,body:'REFLECTED_SECRET'});
+    if(failure==='GraphQL error')h.responses.push({status:200,body:'{"errors":[{"message":"REFLECTED_SECRET"}]}'});
+    if(failure==='slow response'){
+      const fetch=h.c.UrlFetchApp.fetch;h.c.UrlFetchApp.fetch=(url,opt)=>{const reply=fetch(url,opt);h.advance(30000);return reply;};
+      schemaReply(h,data);
+    }
+    const r=h.c.inspectTenderNationalSchema();assert.equal(r.introspectionShapeVerified,false);
+    assert.equal(r.decision,'HOLD_NATIONAL');assert.ok(r.issue);
+    assert.equal(JSON.stringify(r).includes('REFLECTED_SECRET'),false);assert.deepEqual(state(),before);
+    assert.equal(r.requests,failure==='other endpoint'?0:1);
+  });
+}
+
 test('national gate refresh adds unknown lots and preserves manual evidence on rerun', () => {
   const h = harness(); h.setup();
   const header = ['LOT_ID','HASH','STATUS','CLASSIFICATION','PLANNED_METHOD_ID','ACTUAL_METHOD_ID','PUBLISHED_RAW','NORMALIZED_JSON','FIRST_OBSERVED','LAST_OBSERVED','REVISION'];
