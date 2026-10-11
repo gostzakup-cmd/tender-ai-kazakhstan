@@ -1,0 +1,29 @@
+{
+  "purpose": "DOCUMENT_PROVENANCE_RESEARCH_NOT_NATIONAL_CLEARANCE",
+  "issue": "https://github.com/gostzakup-cmd/tender-ai-kazakhstan/issues/22",
+  "baseCommit": "b0faeef8b136b2af01e7db0a7bb32a2cff1c4b11",
+  "priorResearchPr": "https://github.com/gostzakup-cmd/tender-ai-kazakhstan/pull/23",
+  "capturedAtMeaning": "LOCAL_DOWNLOAD_COMPLETION_UTC_NOT_SERVER_TIMESTAMP",
+  "publicRequests": {"credentialsSent":false,"cookiesSent":false,"captchaBypass":false,"googleFunctionsRun":false,"appsScriptNetworkAccessVerified":false},
+  "liveFileLotsApiResponseObtained": false,
+  "approvedFreshnessPolicy": null,
+  "nationalRegime": "UNVERIFIED",
+  "decision": "HOLD_NATIONAL",
+  "currentNationalProofVerified": false,
+  "sources": [
+    {"key":"public-lots-schema","url":"https://ows.goszakup.gov.kz/help/v3/schema/lots.doc.html","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:04:24.822Z","bodySha256":"308dfa8d5358f7e95b2e8f578ab2877db80b8181aaaf928b2e72722b3ae2e05f","relation":"Lots.Files: [FileLots]"},
+    {"key":"public-filelots-schema","url":"https://ows.goszakup.gov.kz/help/v3/schema/filelots.doc.html","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:05:31.922Z","bodySha256":"7e8d0b8e03e753c93c77de3a0164e2e571f1556942a1f786e3e813dd3d416fe7","fields":{"id":"Int","filePath":"String","originalName":"String","objectId":"Int","nameRu":"String","nameKz":"String","indexDate":"String","systemId":"Int"},"objectIdSemanticsVerified":false},
+    {"key":"current-portal-boundary","url":"https://v3bl.goszakup.gov.kz/ru/announce/index/17757453","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:04:43.559Z","bodySha256":"b34ca5f0f7f360c69a77a6a6ac9a4ea996f2835aa51a1bf128e6d5d1f3828f46","finalUrl":"https://v3bl.goszakup.gov.kz/ru/user/login","announcementContentRead":false,"nationalFlagFound":null},
+    {"key":"primary-lot","url":"https://old.goszakup.gov.kz/kz/subpriceoffer/index/17757379/43543910","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:05:31.878Z","bodySha256":"84f1826d1a8b9aa83dece00db5a435647e5912f7036b9679521a66b57028a89a","lotId":"43543910","lotNumber":"88198152-ЗЦП1","announcementIdFromPath":"17757379","status":"Жарияланды (бағалы ұсыныстарды қабылдау)","applicationStartRaw":"2026-10-09 16:30:00","applicationEndRaw":"2026-10-13 16:30:00","nationalFlagFound":false},
+    {"key":"announcement-documents","url":"https://old.goszakup.gov.kz/kz/announce/index/17757453?tab=documents","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:05:32.314Z","bodySha256":"ef37725dc1efd6f6a1763b35b39aa7610fbf942302154d3f093e868841d80b84","nationalFlagFound":false,"unrelatedYesNoCellsAreNotNationalProof":true},
+    {"key":"document-ui-javascript","url":"https://old.goszakup.gov.kz/js/announce/docs.js?1719957494","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:06:20.959Z","bodySha256":"521ede7f373f02048a757bc12b1bf32d77f309316b98fc770f5d4afedd796e1f","observedReadFunction":"actionModalShowFiles(idAnno, idGroup)","documentedPublicApiContractVerified":false},
+    {"key":"technical-document-list","url":"https://old.goszakup.gov.kz/kz/announce/actionAjaxModalShowFiles/17757453/125","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:06:30.152Z","bodySha256":"4b66ecb29652252bd0756766e88f401c29305ec3f49228fbf8673f3a179768e2","lotNumber":"88138120-ЗЦП1","fileLabel":"techspec_17757453_43544048.pdf","uiCreatedRaw":"2026-10-09 16:12:02","nationalFlagFound":false,"signatureLinkSeen":true,"signatureVerified":false},
+    {"key":"original-technical-pdf","url":"https://v3bl.goszakup.gov.kz/files/download_file/316693537/227389564/","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:06:42.570Z","bodySha256":"6977be1217829e8cfbf46a4a810e93f7862dcb69bb4b7525e9cc7fa701bbf5dd","contentTypeObserved":"application/pdf","byteLength":27648,"pages":2,"headerNumbers":{"announcement":"17757453-1","lot":"88138120-ЗЦП1"},"bindingEvidence":"PUBLIC_LOT_ROW_PLUS_FILENAME_AND_PDF_HEADERS","downloadPathSegmentSemanticsVerified":false,"currentDocumentVersionVerified":false,"nationalFlagFound":false,"fullTechnicalComplianceAnalyzed":false},
+    {"key":"owner-provided-cabinet","url":"https://zakup.gov.kz/cabinet/announcement/17745515","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:14:05.742Z","bodySha256":"c2d729630dfd0593b5f72069606c8e78b7f69c1eb57d66ea677206b5be7b812b","announcementIdFromUrl":"17745515","sameAsThreeTargetAnnouncements":false,"kind":"SPA_SHELL_ONLY","announcementContentRead":false,"nationalFlagFound":null},
+    {"key":"owner-portal-public-ui-code","url":"https://zakup.gov.kz/assets/theme-DClvITP9.js","requestMethod":"GET","httpStatus":200,"capturedAt":"2026-10-11T20:16:01.175Z","bodySha256":"890e8bff7f57fc51c087620fbf32e58cd9bdd50807a4123dac99d62f647198ee","kind":"PUBLIC_STATIC_JAVASCRIPT","observedReadRoute":"/api/core/api/public/announcements/${id}/","documentedApiContractVerified":false,"liveResponseShapeVerified":false}
+  ],
+  "blockedDataReads": [
+    {"url":"https://zakup.gov.kz/api/core/api/public/announcements/17745515/","requestMethod":"GET","routeOrigin":"PUBLIC_UI_JAVASCRIPT","httpStatus":null,"curlExitCode":28,"timeoutMs":20000,"bytesReceived":0,"responseShapeVerified":false,"nationalFlagVerified":false,"tokenValidityDetermined":false},
+    {"url":"https://zakup.gov.kz/api/core/api/public/announcements/17757453/","requestMethod":"GET","routeOrigin":"PUBLIC_UI_JAVASCRIPT","httpStatus":null,"curlExitCode":28,"timeoutMs":20000,"bytesReceived":0,"responseShapeVerified":false,"nationalFlagVerified":false,"tokenValidityDetermined":false}
+  ]
+}
