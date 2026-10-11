@@ -1594,6 +1594,218 @@ test('invalid goods dates still block readiness even when another sample normali
   assert.equal(h.properties.has('TENDER_V3_VERIFIED_CONFIG'), false);
 });
 
+// New national evidence fixture is entirely SYNTHETIC. Even these known Issue
+// IDs and the official URL below never result in real network/Google calls.
+function nationalEvidenceFixture(ids = ['43543910','43544048','43544131']) {
+  const h=harness();h.setup();configureV3(h);
+  h.properties.delete('GOSZAKUP_V3_ENDPOINT'); // Exercise strict official-source guard with a mocked transport.
+  const config=h.c.v3Config_();h.properties.set('TENDER_V3_VERIFIED_CONFIG',config.fingerprint);
+  h.properties.set('TENDER_SYNC_STATE','{"cursor":"OWNER_CURSOR"}');
+  const pilot=h.c.SpreadsheetApp.getActiveSpreadsheet().insertSheet('PILOT_LOTS');
+  pilot.appendRow(['LOT_ID','HASH','STATUS','CLASSIFICATION','PLANNED_METHOD_ID',
+    'ACTUAL_METHOD_ID','PUBLISHED_RAW','NORMALIZED_JSON','FIRST_OBSERVED','LAST_OBSERVED','REVISION']);
+  for(const id of ids)pilot.appendRow([id,'synthetic-hash','INTERNAL_TEST_OPEN','ELIGIBLE_GOODS',3,6,'',
+    JSON.stringify(lot(id)),now,now,1]);
+  h.c.refreshTenderNationalGate();
+  const gate=h.sheets.get('NATIONAL_GATE');
+  gate.rows[1].splice(6,6,'ДА','https://goszakup.gov.kz/synthetic-owner-proof',
+    '2020-01-01','Unverified owner evidence','=OWNER_FORMULA()','Owner note');
+  const raw=ids.map(id=>{
+    const value=pilotRow(Number(id));
+    value.TrdBuy={...value.TrdBuy,id:value.trdBuyId};
+    value.Plans=value.Plans.map(plan=>({...plan,refEnstruCode:'11.22.33.444'}));
+    return value;
+  });
+  const state=()=>json({sheets:[...h.sheets].map(([name,s])=>[name,s.rows]),
+    properties:[...h.properties].filter(([key])=>key!=='TENDER_PILOT_QUOTA'),triggers:h.triggers});
+  return {h,raw,pilot,state};
+}
+function nationalReply(h,rows){h.responses.push({status:200,body:JSON.stringify({data:{Lots:rows}})});}
+function assertNationalHold(report){
+  assert.equal(report.readyToSkip,false);assert.equal(report.readyToPassToTs,false);
+  assert.equal(report.nationalSourceVerified,false);assert.equal(report.mvpReady,false);
+  for(const item of report.items){
+    assert.equal(item.nationalRegime,'UNVERIFIED');assert.equal(item.decision,'HOLD_NATIONAL');
+    assert.equal(item.nationalProofUrl,null);assert.equal(item.methodScopeVerified,false);
+    assert.equal(Object.values(item).includes('GO'),false);
+  }
+}
+
+test('national evidence checks exact three IDs, preserves Sheets/owner formulas and only accounts quota',()=>{
+  const {h,raw,state}=nationalEvidenceFixture(),before=state();nationalReply(h,raw);
+  const report=h.c.inspectTenderNationalEvidence();assertNationalHold(report);
+  assert.equal(report.requests,1);assert.equal(report.configurationVerified,true);
+  assert.equal(report.apiResponseValidated,true);
+  assert.deepEqual(json(report.items.map(v=>v.classification)),Array(3).fill('ELIGIBLE_GOODS'));
+  assert.deepEqual(json(report.items.map(v=>[v.plannedMethodId,v.actualMethodId])),Array(3).fill([3,6]));
+  assert.deepEqual(json(report.items.map(v=>v.planCoverageVerified)),[true,true,true]);
+  assert.deepEqual(state(),before);assert.equal(JSON.parse(h.properties.get('TENDER_PILOT_QUOTA')).length,1);
+  const call=h.fetchCalls[0],payload=JSON.parse(call.options.payload);
+  assert.deepEqual(payload.variables,{filter:{id:[43543910,43544048,43544131]},limit:3});
+  assert.equal(call.options.followRedirects,false);assert.equal(call.options.validateHttpsCertificates,true);
+  assert.equal(call.url,'https://ows.goszakup.gov.kz/v3/graphql');
+  assert.ok(payload.query.includes('refEnstruCode'));assert.equal(/national|regime|isLightIndustry/i.test(payload.query.replace('NationalEvidence','')),false);
+});
+
+test('national evidence supports explicit one to three IDs and never scans registry or unselected rows',()=>{
+  const {h,raw}=nationalEvidenceFixture();nationalReply(h,[raw[1]]);
+  const r=h.c.inspectTenderNationalEvidence(['43544048']);assertNationalHold(r);
+  assert.equal(r.items.length,1);assert.equal(r.items[0].lotId,'43544048');
+  assert.deepEqual(JSON.parse(h.fetchCalls[0].options.payload).variables.filter,{id:[43544048]});
+});
+
+for(const bad of [[],[1,2,3,4],[43543910,'43543910'],['043543910'],[0],[-1],[2147483648],[1.1],['abc'],null]){
+  test('national evidence rejects malformed selection '+JSON.stringify(bad)+' before any side effect',()=>{
+    const {h,state}=nationalEvidenceFixture(),before=state();
+    assert.throws(()=>h.c.inspectTenderNationalEvidence(bad),/NATIONAL_EVIDENCE_IDS_INVALID/);
+    assert.deepEqual(state(),before);assert.equal(h.fetchCalls.length,0);
+    assert.equal(h.properties.has('TENDER_PILOT_QUOTA'),false);
+  });
+}
+
+for(const reason of ['missing Plans','mixed goods','duplicate plan','duplicate point','missing KTRU','too many points']){
+  test('national evidence holds partial or inconsistent composition: '+reason,()=>{
+    const {h,raw}=nationalEvidenceFixture();const row=raw[0];
+    if(reason==='missing Plans')row.Plans=[];
+    if(reason==='mixed goods')row.Plans[0].refSubjectTypeId=2;
+    if(reason==='duplicate plan'){row.pointList=[777,778];row.Plans.push({...row.Plans[0]});}
+    if(reason==='duplicate point'){row.pointList=[777,777];row.Plans.push({...row.Plans[0]});}
+    if(reason==='missing KTRU')delete row.Plans[0].refEnstruCode;
+    if(reason==='too many points'){
+      row.pointList=Array.from({length:31},(_,i)=>777+i);
+      row.Plans=row.pointList.map(id=>({id,refSubjectTypeId:1,refEnstruCode:'11.22.33.444'}));
+    }
+    nationalReply(h,raw);const report=h.c.inspectTenderNationalEvidence();assertNationalHold(report);
+    assert.equal(report.items[0].classification,'UNVERIFIED');assert.equal(report.items[0].planCoverageVerified,false);
+    assert.ok(report.items[0].dataIssues.includes('GOODS_PLANS_KTRU_COVERAGE_UNVERIFIED'));
+  });
+}
+
+test('national evidence preserves mixed KTRUs and method differences without deriving rule applicability',()=>{
+  const {h,raw}=nationalEvidenceFixture();raw[0].pointList=[777,778];
+  raw[0].Plans.push({id:778,refSubjectTypeId:1,refEnstruCode:'99.88.77.666'});
+  nationalReply(h,raw);const r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+  assert.deepEqual(json(r.items[0].ktruCodes),['11.22.33.444','99.88.77.666']);
+  assert.equal(r.items[0].classification,'ELIGIBLE_GOODS');
+  assert.equal(r.items[0].methodScopeVerified,false);
+});
+
+for(const scenario of ['deleted','unknown deletion','over budget','no quantity','missing actual method',
+  'wrong announcement','closed status','future opening','expired deadline','missing dates']){
+  test('national evidence checks fresh eligibility instead of trusting cached active pilot: '+scenario,()=>{
+    const {h,raw}=nationalEvidenceFixture(),row=raw[0];
+    if(scenario==='deleted')row.isDeleted=1;
+    if(scenario==='unknown deletion')delete row.isDeleted;
+    if(scenario==='over budget')row.amount=10000000.01;
+    if(scenario==='no quantity')row.count=0;
+    if(scenario==='missing actual method')delete row.refBuyTradeMethodsId;
+    if(scenario==='wrong announcement')row.TrdBuy.id=556;
+    if(scenario==='closed status')row.RefLotsStatus.code='ResultCompleted';
+    if(scenario==='future opening')row.TrdBuy.startDate='2026-10-09 07:00:00';
+    if(scenario==='expired deadline')row.TrdBuy.endDate='2026-10-08 07:59:00';
+    if(scenario==='missing dates')row.TrdBuy.publishDate=null;
+    nationalReply(h,raw);const r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+    assert.equal(r.items[0].classification,'UNVERIFIED');assert.ok(r.items[0].dataIssues.length>0);
+  });
+}
+
+for(const scenario of ['unknown timezone','changed configuration','missing proof']){
+  test('national evidence never manufactures configuration readiness: '+scenario,()=>{
+    const {h,raw}=nationalEvidenceFixture();
+    if(scenario==='unknown timezone')h.properties.delete('GOSZAKUP_API_DATE_TIMEZONE');
+    if(scenario==='changed configuration')h.properties.set('GOSZAKUP_ACTIVE_STATUS_CODES','["Different"]');
+    if(scenario==='missing proof')h.properties.delete('TENDER_V3_VERIFIED_CONFIG');
+    nationalReply(h,raw);const r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+    assert.equal(r.configurationVerified,false);
+    assert.ok(r.items.every(v=>v.classification==='UNVERIFIED'));
+  });
+}
+
+for(const scenario of ['duplicate API ID','unexpected API ID','null Lots','missing Lots']){
+  test('national evidence rejects an inconsistent whole response: '+scenario,()=>{
+    const {h,raw,state}=nationalEvidenceFixture(),before=state();
+    let Lots=scenario==='duplicate API ID'?[raw[0],raw[0]]:
+      scenario==='unexpected API ID'?[raw[0],{...raw[1],id:999}]:null;
+    if(scenario==='missing Lots')h.responses.push({status:200,body:'{"data":{}}'});else nationalReply(h,Lots);
+    const r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+    assert.equal(r.apiResponseValidated,false);assert.ok(r.issue);
+    assert.ok(r.items.every(v=>v.classification==='UNVERIFIED'));assert.deepEqual(state(),before);
+  });
+}
+
+test('national evidence reports missing requested lots individually without declaring complete coverage',()=>{
+  const {h,raw}=nationalEvidenceFixture();nationalReply(h,[raw[0]]);
+  const r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+  assert.equal(r.items[0].classification,'ELIGIBLE_GOODS');
+  assert.ok(r.items[1].dataIssues.includes('LOT_NOT_RETURNED'));
+  assert.ok(r.items[2].dataIssues.includes('LOT_NOT_RETURNED'));
+});
+
+test('national evidence refuses duplicate cached IDs before HTTP and holds unverified pilot candidates',()=>{
+  const {h,pilot}=nationalEvidenceFixture();pilot.appendRow([...pilot.rows[1]]);
+  const r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+  assert.equal(r.issue,'NATIONAL_EVIDENCE_DUPLICATE_PILOT_ID');assert.equal(r.requests,0);
+  assert.equal(h.fetchCalls.length,0);
+  pilot.rows.pop();pilot.rows[1][3]='QUARANTINE';pilot.rows[2][7]='broken';pilot.rows.pop();
+  const second=h.c.inspectTenderNationalEvidence();assertNationalHold(second);
+  assert.equal(second.requests,0);assert.ok(second.items.every(v=>v.dataIssues.includes('PILOT_CANDIDATE_NOT_VERIFIED')));
+});
+
+test('national evidence shares daily quota with pilot and fails closed on malformed or exhausted ledger',()=>{
+  const {h,state}=nationalEvidenceFixture(),before=state();
+  h.properties.set('TENDER_PILOT_QUOTA',JSON.stringify(Array(200).fill(h.c.Date.now())));
+  let r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+  assert.equal(r.issue,'PILOT_DAILY_LIMIT');assert.equal(r.requests,0);assert.equal(h.fetchCalls.length,0);
+  h.properties.set('TENDER_PILOT_QUOTA','broken');r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+  assert.equal(r.issue,'PILOT_QUOTA_STATE_INVALID');assert.equal(h.properties.get('TENDER_PILOT_QUOTA'),'broken');
+  assert.deepEqual(state(),before);
+});
+
+test('national evidence limits retries to four counted attempts and never reflects untrusted bodies',()=>{
+  const {h,state}=nationalEvidenceFixture(),before=state();
+  h.responses.push(...Array(4).fill({status:503,body:'SECRET_RESPONSE_TEXT'}));
+  const r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+  assert.equal(r.requests,4);assert.equal(h.fetchCalls.length,4);
+  assert.equal(JSON.parse(h.properties.get('TENDER_PILOT_QUOTA')).length,4);
+  assert.equal(JSON.stringify(r).includes('SECRET_RESPONSE_TEXT'),false);assert.deepEqual(state(),before);
+});
+
+for(const scenario of ['CONNECT 403','HTTP 403','long Retry-After','GraphQL errors']){
+  test('national evidence safely stops '+scenario+' and retains owner evidence',()=>{
+    const {h,state}=nationalEvidenceFixture(),before=state();
+    h.responses.push(scenario==='CONNECT 403'?new Error('CONNECT 403 SECRET_RESPONSE_TEXT'):
+      {status:scenario==='HTTP 403'?403:scenario==='long Retry-After'?429:200,
+        body:scenario==='GraphQL errors'?'{"errors":[{"message":"SECRET_RESPONSE_TEXT"}]}':'SECRET_RESPONSE_TEXT',
+        headers:scenario==='long Retry-After'?{'Retry-After':'120'}:{}});
+    const r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);assert.equal(r.requests,1);
+    assert.equal(r.issue,scenario==='CONNECT 403'?'API_PROXY_CONNECT_403':scenario==='HTTP 403'?'API_HTTP_403':
+      scenario==='long Retry-After'?'API_RATE_LIMIT':'API_GRAPHQL_ERRORS');
+    assert.equal(JSON.stringify(r).includes('SECRET_RESPONSE_TEXT'),false);assert.deepEqual(state(),before);
+  });
+}
+
+test('national evidence detects timeout after a slow response and redacts token before truncation',()=>{
+  const {h,raw}=nationalEvidenceFixture();const original=h.c.UrlFetchApp.fetch;
+  h.c.UrlFetchApp.fetch=(url,options)=>{const response=original(url,options);h.advance(30000);return response;};
+  nationalReply(h,raw);let r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+  assert.equal(r.issue,'NATIONAL_EVIDENCE_TIME_LIMIT');assert.equal(r.apiResponseValidated,false);
+  h.c.UrlFetchApp.fetch=original;
+  const token='SYNTHETIC_SECRET_'+ 'x'.repeat(200);h.properties.set('GOSZAKUP_TOKEN',token);
+  raw[0].lotNumber=token+'-lot';nationalReply(h,raw);
+  r=h.c.inspectTenderNationalEvidence();assertNationalHold(r);
+  assert.equal(JSON.stringify(r).includes('SYNTHETIC_SECRET_'),false);
+  assert.ok(r.items[0].lotNumber.includes('[REDACTED]'));
+});
+
+test('national evidence replay changes only attempt ledger and cannot unblock full sync or trigger',()=>{
+  const {h,raw,state}=nationalEvidenceFixture(),before=state();nationalReply(h,raw);nationalReply(h,raw);
+  const first=json(h.c.inspectTenderNationalEvidence()),second=json(h.c.inspectTenderNationalEvidence());
+  assert.deepEqual(first,second);assert.deepEqual(state(),before);
+  assert.equal(JSON.parse(h.properties.get('TENDER_PILOT_QUOTA')).length,2);
+  assert.throws(()=>h.c.syncTenderLots(),/FULL_SCAN_DISABLED/);
+  assert.throws(()=>h.c.installDailyTrigger(),/FULL_SCAN_DISABLED/);
+});
+
 test('national gate refresh adds unknown lots and preserves manual evidence on rerun', () => {
   const h = harness(); h.setup();
   const header = ['LOT_ID','HASH','STATUS','CLASSIFICATION','PLANNED_METHOD_ID','ACTUAL_METHOD_ID','PUBLISHED_RAW','NORMALIZED_JSON','FIRST_OBSERVED','LAST_OBSERVED','REVISION'];
