@@ -1667,3 +1667,131 @@ test('national KTRU probe with incomplete plans remains UNVERIFIED and never mut
   assert.deepEqual(json(report.items[0].ktruCodes),[]);
   assert.equal(report.items[0].reason,'MISSING_LOT_OR_PLAN_COVERAGE');
 });
+
+// Offline national-gate regression cases; all lot/plan responses here are
+// SYNTHETIC. These cases do not verify any real lot's national-regime flag.
+function nationalProbeFixture() {
+  const h = harness(); h.setup();
+  const pilot = h.c.SpreadsheetApp.getActiveSpreadsheet().insertSheet('PILOT_LOTS');
+  pilot.appendRow(['LOT_ID','HASH','STATUS','CLASSIFICATION','PLANNED_METHOD_ID',
+    'ACTUAL_METHOD_ID','PUBLISHED_RAW','NORMALIZED_JSON','FIRST_OBSERVED','LAST_OBSERVED','REVISION']);
+  pilot.appendRow(['101','synthetic-hash','PublishedOfferAccept','ELIGIBLE_GOODS',3,3,'',
+    JSON.stringify(lot('101')),now,now,1]);
+  h.properties.set('GOSZAKUP_TOKEN','SYNTHETIC_NATIONAL_TOKEN');
+  const snapshot = () => json({sheets:[...h.sheets].map(([name,s])=>[name,s.rows]),
+    properties:[...h.properties], triggers:h.triggers});
+  return {h,pilot,snapshot,raw:{id:101,pointList:[22],
+    Plans:[{id:22,refSubjectTypeId:1,refEnstruCode:'11.22.33.444'}]}};
+}
+
+test('national refresh preserves all owner G:L cells, unrelated lots and ALL_LOTS', () => {
+  const {h} = nationalProbeFixture();
+  h.c.refreshTenderNationalGate();
+  const gate = h.sheets.get('NATIONAL_GATE');
+  const owner = ['ДА','https://goszakup.gov.kz/synthetic-proof','2026-01-01',
+    'SYNTHETIC old owner evidence; not independently validated','=OWNER_FORMULA()', 'Owner note'];
+  gate.rows[1].splice(6,6,...owner);
+  gate.appendRow(['999','old owner lot',1,'old','UNKNOWN','',...owner]);
+  const retained = [...gate.rows[2]], all = json(h.sheets.get('ALL_LOTS').rows);
+  h.c.refreshTenderNationalGate(); h.c.refreshTenderNationalGate();
+  assert.deepEqual(gate.rows[1].slice(6,12),owner);
+  assert.deepEqual(gate.rows[2],retained);
+  assert.deepEqual(json(h.sheets.get('ALL_LOTS').rows),all);
+});
+
+test('national probe rejects duplicate pilot IDs before HTTP or mutation', () => {
+  const {h,pilot,snapshot} = nationalProbeFixture();
+  pilot.appendRow([...pilot.rows[1]]);
+  const before = snapshot();
+  assert.throws(()=>h.c.inspectTenderNationalKtru(),/NATIONAL_KTRU_PILOT_ID_INVALID/);
+  assert.equal(h.fetchCalls.length,0);
+  assert.deepEqual(snapshot(),before);
+});
+
+for (const scenario of ['duplicate API IDs','unexpected API ID']) {
+  test('national probe rejects '+scenario+' without writing evidence', () => {
+    const {h,snapshot,raw} = nationalProbeFixture(), before = snapshot();
+    const Lots = scenario==='duplicate API IDs'?[raw,raw]:[{...raw,id:999}];
+    h.responses.push({status:200,body:JSON.stringify({data:{Lots}})});
+    assert.throws(()=>h.c.inspectTenderNationalKtru(),/NATIONAL_KTRU_ID_MISMATCH/);
+    assert.deepEqual(snapshot(),before);
+  });
+}
+
+for (const scenario of ['missing lot','non-goods plan','duplicate plan','duplicate point']) {
+  test('national probe remains UNVERIFIED for '+scenario, () => {
+    const {h,snapshot,raw} = nationalProbeFixture(), before = snapshot();
+    if (scenario==='non-goods plan') raw.Plans[0].refSubjectTypeId=2;
+    if (scenario==='duplicate plan') {raw.pointList=[22,23];raw.Plans.push({...raw.Plans[0]});}
+    if (scenario==='duplicate point') {raw.pointList=[22,22];raw.Plans.push({...raw.Plans[0]});}
+    h.responses.push({status:200,body:JSON.stringify({data:{Lots:scenario==='missing lot'?[]:[raw]}})});
+    const report=h.c.inspectTenderNationalKtru();
+    assert.equal(report.items[0].nationalRegime,'UNVERIFIED');
+    assert.equal(report.items[0].planCoverageVerified,false);
+    assert.equal(report.automaticallyDeterminedNationalRegime,0);
+    assert.equal(report.readyToSkip,false);
+    assert.deepEqual(snapshot(),before);
+  });
+}
+
+for (const scenario of ['HTTP 403','CONNECT 403','long Retry-After']) {
+  test('national probe safely stops on '+scenario+' without leaking response or changing state', () => {
+    const {h,snapshot} = nationalProbeFixture(), before = snapshot();
+    const response = scenario==='CONNECT 403'?new Error('CONNECT 403 SYNTHETIC_NATIONAL_TOKEN'):
+      {status:scenario==='HTTP 403'?403:429, body:'SYNTHETIC_NATIONAL_TOKEN',
+        headers:scenario==='long Retry-After'?{'Retry-After':'120'}:{}};
+    h.responses.push(response);
+    const code=scenario==='CONNECT 403'?'API_PROXY_CONNECT_403':
+      scenario==='HTTP 403'?'API_HTTP_403':'API_RATE_LIMIT';
+    assert.throws(()=>h.c.inspectTenderNationalKtru(), e=>
+      e.message.includes(code) && !e.message.includes('SYNTHETIC_NATIONAL_TOKEN'));
+    assert.equal(h.fetchCalls.length,1);
+    assert.equal(h.sleeps.length,0);
+    assert.deepEqual(snapshot(),before);
+  });
+}
+
+test('national probe replay preserves state and sends Bearer only to OWS without redirects', () => {
+  const {h,snapshot,raw} = nationalProbeFixture(), before = snapshot();
+  const reply={status:200,body:JSON.stringify({data:{Lots:[raw]}})};
+  h.responses.push(reply,reply);
+  const first=json(h.c.inspectTenderNationalKtru()), second=json(h.c.inspectTenderNationalKtru());
+  assert.deepEqual(first,second);
+  assert.deepEqual(snapshot(),before);
+  for(const call of h.fetchCalls){
+    assert.match(call.url,/^https:\/\/ows\.goszakup\.gov\.kz\//);
+    assert.equal(call.options.followRedirects,false);
+    assert.equal(call.options.validateHttpsCertificates,true);
+  }
+});
+
+test('national source inventory retains actual legal clauses but never grants lot verdicts', () => {
+  const inventory=JSON.parse(fs.readFileSync(path.join(root,'docs/national/sources.json'),'utf8'));
+  assert.equal(inventory.purpose,'RESEARCH_ONLY_NOT_A_LOT_CLASSIFIER');
+  assert.equal(inventory.inventoryComplete,false);
+  assert.equal(inventory.listVersionVerified,false);
+  assert.equal(inventory.currentLotVerdictsVerified,false);
+  const sources=new Map(inventory.sources.map(s=>[s.documentId,s]));
+  assert.equal(sources.size,6);
+  for(const source of sources.values()){
+    assert.match(source.url,/^https:\/\/old\.adilet\.zan\.kz\/rus\/docs\/[ZP]\d+$/);
+    assert.equal(source.httpStatus,200);
+    assert.match(source.htmlSha256,/^[a-f0-9]{64}$/);
+    assert.ok(source.textExcerpt.includes('национального режима'));
+  }
+  assert.match(sources.get('Z2400000106').textExcerpt,/не более двух лет/);
+  assert.match(sources.get('P2600000764').textExcerpt,/21\), 22\) и 23\)/);
+  assert.match(sources.get('P2500000824').textExcerpt,/с 28 октября 2025/);
+  assert.match(sources.get('P2500000824').textExcerpt,/с 1\s+января 2026/);
+  assert.deepEqual(inventory.pilotLots.map(v=>v.lotId),['43543910','43544048','43544131']);
+  for(const item of inventory.pilotLots){
+    assert.equal(item.nationalRegime,'UNVERIFIED');
+    assert.equal(item.gateDecision,'HOLD_NATIONAL');
+    assert.equal(item.lotDataVerifiedThisTask,false);
+    assert.equal(item.planCoverageVerified,false);
+    assert.equal(item.ktruCodes,null);
+  }
+  const blocked=inventory.blockedSources.find(s=>s.proxyConnectStatus===403);
+  assert.equal(blocked.httpStatus,null);
+  assert.equal(blocked.tokenValidityDetermined,false);
+});
