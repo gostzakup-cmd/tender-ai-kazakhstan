@@ -137,7 +137,7 @@
     },
     {
       "lotId": "43544131",
-      "nameReportedInIssue": "battery",
+      "nameReportedInIssue": "Батарейка",
       "provenance": "GitHub Issue #18; not a live API response",
       "lotDataVerifiedThisTask": false,
       "planCoverageVerified": false,
