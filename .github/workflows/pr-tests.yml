@@ -30,6 +30,6 @@ jobs:
           cp -R "$RUNNER_TEMP/tender-pr-parsers/node_modules/acorn" tools/ci/node_modules/acorn
           cp -R "$RUNNER_TEMP/tender-pr-parsers/node_modules/yaml" tools/ci/node_modules/yaml
       - name: Run offline unit tests
-        run: node --test tests/core.test.cjs tests/upload.test.cjs tests/actions.test.cjs
+        run: node --test tests/*.test.cjs
       - name: Validate patch whitespace
         run: git diff --check HEAD~1 HEAD
