@@ -18,3 +18,6 @@ test('replay is deterministic and inputs untouched; no Google services exist in 
 test('approved YES artifact cannot be relabelled NO using the same hash',()=>{const f=fixture();f.policy.sources[0].artifacts[0].restriction='YES';assert.equal(run(f).decision,'HOLD_NATIONAL');});
 
 for(const key of ['amountKzt','quantity','applicationStart','deadline','isGoods','planCoverageVerified','active'])test('current commercial state '+key+' cannot change under the same approved revision',()=>{const f=fixture();f.lot[key]=key==='amountKzt'?9000000:'CHANGED';assert.equal(run(f).decision,'HOLD_NATIONAL');});
+
+test('sparse plan arrays cannot masquerade as verified IDs',()=>{const f=fixture();f.lot.planIds=new Array(1);f.proof.context.planIds=new Array(1);f.policy.sources[0].artifacts[0].context=structuredClone(f.proof.context);assert.equal(run(f).decision,'HOLD_NATIONAL');});
+test('another artifact kind cannot attest an official per-lot decision',()=>{const f=fixture();f.policy.sources[0].artifacts[0].kind='OTHER';assert.equal(run(f).decision,'HOLD_NATIONAL');});

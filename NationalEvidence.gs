@@ -16,7 +16,7 @@ function assessTenderNationalEvidence(lot, proof, policy, nowIso) {
     return s && s.approved === true && s.adapterId === proof.adapterId &&
       Array.isArray(s.artifacts) && s.artifacts.some(function (a) {
         return a && a.url === proof.url && a.sha256 === proof.sha256 && a.version === proof.version &&
-          a.restriction === proof.restriction && a.observedAt === proof.observedAt &&
+          a.kind === proof.kind && a.restriction === proof.restriction && a.observedAt === proof.observedAt &&
           sameContext(a.context,proof.context) &&
           a.allPlanRowsVerified === true && a.methodAndExceptionsVerified === true;
       });
@@ -34,7 +34,7 @@ function assessTenderNationalEvidence(lot, proof, policy, nowIso) {
   })) return hold('CONTEXT_MISMATCH');
   if (lot.unit !== undefined && proof.context.unit !== lot.unit) return hold('UNIT_CONTEXT_MISMATCH');
   if (!Array.isArray(lot.planIds) || !lot.planIds.length || !Array.isArray(proof.context.planIds) ||
-      !lot.planIds.every(id) || new Set(lot.planIds).size !== lot.planIds.length ||
+      !Array.from(lot.planIds).every(id) || new Set(lot.planIds).size !== lot.planIds.length ||
       JSON.stringify(lot.planIds.slice().sort()) !== JSON.stringify(proof.context.planIds.slice().sort()) ||
       proof.allPlanRowsVerified !== true || proof.methodAndExceptionsVerified !== true) return hold('SCOPE_UNVERIFIED');
   if (proof.restriction === 'YES') return {decision: 'SKIP', allowedResearch: false, reason: 'VERIFIED_RESTRICTION'};
