@@ -11,12 +11,13 @@ function assessTenderNationalEvidence(lot, proof, policy, nowIso) {
   if (!id(lot.id) || !id(lot.announcementId) || !/^[a-f0-9]{64}$/.test(lot.revisionHash || '') ||
       !['lotNumber','announcementNumber','statusCode'].every(function (key) { return typeof lot[key] === 'string' && !!lot[key]; }) ||
       !Number.isInteger(lot.plannedMethodId) || lot.plannedMethodId < 1 || !Number.isInteger(lot.actualMethodId) || lot.actualMethodId < 1) return hold('LOT_IDENTITY_INVALID');
+  const sameContext = function (a,b) { try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; } };
   const source = policy.sources.find(function (s) {
     return s && s.approved === true && s.adapterId === proof.adapterId &&
       Array.isArray(s.artifacts) && s.artifacts.some(function (a) {
         return a && a.url === proof.url && a.sha256 === proof.sha256 && a.version === proof.version &&
           a.restriction === proof.restriction && a.observedAt === proof.observedAt &&
-          JSON.stringify(a.context) === JSON.stringify(proof.context) &&
+          sameContext(a.context,proof.context) &&
           a.allPlanRowsVerified === true && a.methodAndExceptionsVerified === true;
       });
   });
@@ -26,10 +27,12 @@ function assessTenderNationalEvidence(lot, proof, policy, nowIso) {
   if (!Number.isFinite(observed) || !Number.isFinite(verified) || observed > now || verified > now ||
       now - observed > policy.maxAgeMs || now - verified > policy.maxAgeMs) return hold('STALE_OR_UNKNOWN_TIME');
   const keys = ['id','lotNumber','announcementId','announcementNumber','statusCode',
-    'plannedMethodId','actualMethodId','revisionHash'];
+    'plannedMethodId','actualMethodId','revisionHash','amountKzt','quantity',
+    'applicationStart','deadline','isGoods','planCoverageVerified','active'];
   if (!proof.context || keys.some(function (key) {
     return lot[key] === undefined || lot[key] === null || lot[key] === '' || proof.context[key] !== lot[key];
   })) return hold('CONTEXT_MISMATCH');
+  if (lot.unit !== undefined && proof.context.unit !== lot.unit) return hold('UNIT_CONTEXT_MISMATCH');
   if (!Array.isArray(lot.planIds) || !lot.planIds.length || !Array.isArray(proof.context.planIds) ||
       !lot.planIds.every(id) || new Set(lot.planIds).size !== lot.planIds.length ||
       JSON.stringify(lot.planIds.slice().sort()) !== JSON.stringify(proof.context.planIds.slice().sort()) ||
