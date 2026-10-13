@@ -144,6 +144,7 @@ function assembleTenderCardOfferEvidence(shortlist,requests,cardReport,details,p
     const row={lotId:req.lotId,productUrl:req.url,
       provider:req.provider,origin:req.origin,
       status:'REVIEW',reasons:[],priceObservation:null,
+      publicInventorySignal:null,publicKazakhstanShippingSignal:null,
       supplierIdentityVerified:false,tsCompliance:'UNVERIFIED',
       stockVerified:false,deliveryVerified:false,
       supplierId:detail && detail.supplierId || null};
@@ -168,6 +169,12 @@ function assembleTenderCardOfferEvidence(shortlist,requests,cardReport,details,p
        (!Number.isFinite(Date.parse(validUntil)) ||
         Date.parse(validUntil)<now)) {
       row.reasons.push('CARD_PRICE_EXPIRED');continue;
+    }
+    // Published listing signals are leads, NOT executable stock or shipping.
+    if(card.offerSignals && card.offerSignals.verification==='UNREVIEWED' &&
+       card.offerSignals.stockVerified===false && card.offerSignals.deliveryVerified===false) {
+      row.publicInventorySignal=card.offerSignals.inventory || null;
+      row.publicKazakhstanShippingSignal=card.offerSignals.kazakhstanShipping || null;
     }
     row.priceObservation={status:'UNREVIEWED',
       unitPrice:card.listedOffer.unitPrice,
