@@ -1,0 +1,7 @@
+# Issue #30 — Manufacturer datasheet to reviewed TS comparison
+
+`proposeTenderManufacturerMatches(ts,product,mappings,nowIso)` compares a separately reviewed original procurement PDF's requirements with explicitly transcribed original manufacturer datasheet facts (model, brand, part number, hash, version, page and location). Numeric constraints `GE, GT, LE, LT, EQ, BETWEEN` use signed fixed-point decimal representation and require **exactly identical units and parameter codes**. No guessed OCR reading, model variant equivalence, unit conversion or implicit tolerance is performed. A suggestion is `SUGGEST_MATCH`, `SUGGEST_FAIL` or `UNKNOWN` — never a final TS verdict. All criteria must be explicitly mapped, including unhandled qualitative requirements.
+
+`finalizeTenderManufacturerAssessment(ts,product,mappings,review,policy,nowIso)` requires an independently reviewed manufacturer datasheet and registry bound to original PDF and datasheet SHA-256, exact brand/model/part number, fresh time, full criterion/fact review and all unchanged mappings and reviewer assignments. Only then does it produce the `candidate.assessment` shape consumed by `evaluateTenderResearch`. A missing or mismatched value remains UNKNOWN. It never supplies national proof, independent supplier quotes, stock, delivery, shipping, FX, tax or a planned profitable bid. No automatic GO.
+
+No network, Apps Script deployment, Sheets writes, paid APIs, OCR or live manufacturer sourcing in this PR. Synthetic regression tests do not verify any actual CNP product or tender.
