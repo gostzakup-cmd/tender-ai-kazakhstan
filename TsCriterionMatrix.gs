@@ -22,7 +22,7 @@ function tenderTsCriterionTime_(value) {
 
 function tenderTsCriterionHints_(line) {
   // Hints are never semantic claims. No numeric normalization or unit conversion.
-  const measurement=/(?:\d[0-9.,]*\s*)(?:квт|вт|гц|мпа|па|бар|мм|см|кг|г|л\/мин|м³\/ч|шт|°c|°с|v|hz|kg|rpm)\b/iu;
+  const measurement=/(?:\d[0-9.,]*\s*)(?:квт|вт|гц|мпа|па|бар|мм|см|кг|г|л\/мин|м³\/ч|шт|°c|°с|v|hz|kg|rpm)(?=$|[\s,;.:)\]])/iu;
   const numeric=/\d/u, constraint=/(?:не\s+менее|не\s+более|не\s+ниже|не\s+выше|от\s+\d|до\s+\d|кемінде|аспау|артық\s+емес|≥|≤|±|диапазон|дәлдігі)/iu;
   const table=/[│|;]|\t/u;
   const flags=[];
