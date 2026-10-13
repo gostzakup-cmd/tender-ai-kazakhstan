@@ -1,0 +1,27 @@
+{
+  "purpose": "SCHEMA_AND_SETUP_REFERENCE_NOT_LIVE_OCR_EVIDENCE",
+  "livePaidRequestsMade": false,
+  "sources": [
+    {
+      "kind": "process",
+      "url": "https://cloud.google.com/document-ai/docs/reference/rest/v1/projects.locations.processors/process",
+      "httpStatus": 200,
+      "capturedAt": "2026-10-13T10:24:21.734Z",
+      "bodySha256": "ddd4f0dd0eac0c71afedee375b5cda78f291a1607216abe350529f62b66cb109"
+    },
+    {
+      "kind": "document",
+      "url": "https://cloud.google.com/document-ai/docs/reference/rest/v1/Document",
+      "httpStatus": 200,
+      "capturedAt": "2026-10-13T10:24:21.410Z",
+      "bodySha256": "77996183327427f0c29a0ff4d2a1c69b3513dc029e4cf16ed2e688eb4c9cfb08"
+    },
+    {
+      "kind": "pricing",
+      "url": "https://cloud.google.com/document-ai/pricing",
+      "httpStatus": 200,
+      "capturedAt": "2026-10-13T10:32:38.475Z",
+      "bodySha256": "198c846783ff2f0c07905a605cd50addb13212c4df8fd5548d8e03e3b6b72aef"
+    }
+  ]
+}
