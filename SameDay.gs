@@ -53,6 +53,7 @@ function shortlistTenderSameDay(rows, selection, policy, observedAt) {
         !Number.isInteger(row.trdBuyId) || row.trdBuyId <= 0 || !row.TrdBuy || row.TrdBuy.id !== row.trdBuyId) {
       item.decision = 'REVIEW'; item.reason = 'GOODS_OR_IDENTITY_OR_BUDGET_UNVERIFIED'; return;
     }
+    item.quantity = row.count; item.planIds = points.map(function (id) { return String(id); });
     const scope = Array.isArray(policy.methodStatuses) && policy.methodStatuses.find(function (s) {
       return s && s.approved === true && s.actualMethodId === row.refBuyTradeMethodsId &&
         Array.isArray(s.codes) && s.codes.includes(item.status);

@@ -78,3 +78,16 @@ test('invalid ID scope prevents all API calls',()=>{const h=harness();const r=h.
 test('immutable inputs and no storage dependencies in pure view',()=>{
  const r=lot(),p=policy(),before=JSON.stringify([r,p]);run(r,p);assert.equal(JSON.stringify([r,p]),before);
 });
+test('retry attempts cannot exceed the four-attempt cap or expose partial results',()=>{
+ const h=harness();let used=0;h.ctx.pilotBudget_=()=>({used:()=>used,claim:()=>used++});
+ h.ctx.graphqlResponse_=(config)=>{for(let i=0;i<5;i++)config.requestBudget.claim();return {data:{Lots:[]}};};
+ const r=h.ctx.inspectTenderSameDay({date:'2026-10-13',ids:[1]},policy());
+ assert.equal(used,4);assert.equal(r.issue,'SAME_DAY_SOURCE_OR_QUOTA_BLOCKED');assert.equal(r.items.length,0);
+});
+test('a response arriving after the soft runtime cap is discarded',()=>{
+ const h=harness();let elapsed=0;const RealDate=Date;
+ h.ctx.Date=class extends RealDate{static now(){return RealDate.now()+elapsed;}};
+ h.ctx.graphqlResponse_=(config)=>{config.requestBudget.claim();elapsed=31000;return {data:{Lots:[lot()]}};};
+ const r=h.ctx.inspectTenderSameDay({date:'2026-10-13',ids:[1]},policy());
+ assert.equal(r.issue,'SAME_DAY_SOURCE_OR_QUOTA_BLOCKED');assert.equal(r.items.length,0);assert.equal(h.stats().unlocks,1);
+});
