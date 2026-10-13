@@ -71,7 +71,7 @@ function parseTenderProductCard_(html,requestedUrl,expected,nowIso) {
   const out={status:'REVIEW',reason:'SCHEMA_PRODUCT_NOT_FOUND',identityMatch:'UNVERIFIED',
     product:null,listedOffer:null,availableQuantity:null,leadTimeDays:null,
     tsCompliance:'UNVERIFIED',supplierVerified:false,stockVerified:false,
-    priceVerified:false,deliveryVerified:false, evidenceStatus:'UNREVIEWED'};
+    priceVerified:false,deliveryVerified:false, evidenceStatus:'UNREVIEWED',offerSignals:null};
   if (typeof html!=='string' || html.length>PRODUCT_CARD_PROBE.maxBytes ||
       !productCardHost_(requestedUrl)) {out.reason='PAGE_INVALID';return out;}
   // Extract only application/ld+json script tags, independent of attribute order.
@@ -131,6 +131,7 @@ function parseTenderProductCard_(html,requestedUrl,expected,nowIso) {
   }
   out.listedOffer={unitPrice:rate,currency:offer.priceCurrency,
     availability:availability || 'UNKNOWN',priceValidUntil:offer.priceValidUntil || null};
+  out.offerSignals=extractTenderOfferSignals_(offer);
   // Listed "InStock" is not a verified executable quantity, nor KZ delivery.
   out.reason=out.identityMatch==='MISMATCH'?'PRODUCT_IDENTITY_MISMATCH':
     out.identityMatch!=='EXACT_FIELDS'?'PRODUCT_IDENTITY_INCOMPLETE':
@@ -179,7 +180,7 @@ function inspectTenderProductCards(shortlist, requests, policy) {
         origin:card.origin,observedAt:null,httpStatus:null,contentSha256:null,
         status:'REVIEW',reason:'UNFETCHED',listedOffer:null,product:null,
         identityMatch:'UNVERIFIED',stockVerified:false,deliveryVerified:false,
-        priceVerified:false, tsCompliance:'UNVERIFIED'};
+        priceVerified:false, tsCompliance:'UNVERIFIED',offerSignals:null};
       report.items.push(item);
       let response;
       try {
@@ -207,6 +208,7 @@ function inspectTenderProductCards(shortlist, requests, policy) {
       item.observedAt=at;item.contentSha256=hash;
       item.status=parsed.status;item.reason=parsed.reason;
       item.product=parsed.product;item.listedOffer=parsed.listedOffer;
+      item.offerSignals=parsed.offerSignals;
       item.identityMatch=parsed.identityMatch;
       // Crucially no conversion into CONFIRMED price/stock/delivery or 100% TS.
     }
