@@ -1,0 +1,7 @@
+# Issue #30 — Manufacturer-origin public sitemap candidate discovery
+
+`planTenderManufacturerSiteDiscovery` is a free offline preflight for one current goods lot (<=10m KZT), maximum two brand/model/part-number targets, with exact separately verified manufacturer-owned HTTPS hosts and reviewed public site terms. `inspectTenderManufacturerSiteDiscovery` is opt-in and can sample the public sitemap XML plus at most two model-related product pages per target. Maximum eight public GET attempts including redirects disabled, response bytes limited to 256 KiB, up to three sitemaps and 20 candidate PDF URLs. Existing shared OWS pilot request quota is charged. No paid search API and no PDF bytes download.
+
+It does **not** discover every real manufacturer passport: site maps may omit PDFs or require JavaScript. Both direct PDF URLs and product-page links are only `PENDING_PDF_BYTES_AND_MANUFACTURER_IDENTITY_REVIEW`; even an official host does not establish which model variant a PDF covers. Verify manufacturer ownership, exact PDF bytes/version and all TS criteria independently before calling `selectTenderTechnicalProducts`. No production OCR, TS MATCH, supplier availability, profitability, national regime decision or tender participation is produced.
+
+No Apps Script publication or execution in this PR, no paid service, Google Sheet writes, triggers, new credentials or bidding. Offline synthetic CI only.
