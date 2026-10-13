@@ -24,7 +24,7 @@ test('missing/mismatching identity or multiple offers cannot claim exact product
  const c=setup();
  assert.equal(c.parseTenderProductCard_(html(),url,{...expected,partNumber:'OTHER'},now).identityMatch,'MISMATCH');
  assert.equal(c.parseTenderProductCard_(html(),url,null,now).reason,'EXPECTED_EXACT_IDENTITY_REQUIRED');
- assert.equal(c.parseTenderProductCard_(html().replace('PN-1','OTHER'),url,expected,now).identityMatch,'MISMATCH');
+ assert.equal(c.parseTenderProductCard_(html().replace(/PN-1/g,'OTHER'),url,expected,now).identityMatch,'MISMATCH');
  assert.equal(c.parseTenderProductCard_(html()+html(),url,expected,now).reason,'PRODUCT_AMBIGUOUS');
 });
 test('no price inference from HTML, stale price invalid, malformed JSON stays REVIEW',()=>{
@@ -47,7 +47,7 @@ test('fixed provider host allowlist and manual exact manufacturer hosts',()=>{
 test('runtime guard rejects noncandidate lots before any network calls',()=>{
  const c=setup();let calls=0;
  c.UrlFetchApp={fetch:()=>{calls++;throw Error('unexpected');}};
- const r=c.inspectTenderProductCards({observedAt:now,items:[{lotId:'123',decision:'EXPIRED'}]},
+ const r=c.inspectTenderProductCards({observedAt:new Date().toISOString(),items:[{lotId:'123',decision:'EXPIRED'}]},
  [{lotId:'123',origin:'KZ',provider:'SATU',url,expected}],
  {approved:true,allowPublicProductFetch:true});
  assert.equal(r.issue,'PRODUCT_CARD_SOURCE_NOT_APPROVED');assert.equal(calls,0);
