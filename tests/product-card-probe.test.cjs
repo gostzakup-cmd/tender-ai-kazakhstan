@@ -2,6 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 function setup(){
  const c=vm.createContext({Date,Map,Set});
  vm.runInContext(fs.readFileSync('SupplierIntake.gs','utf8'),c);
+ vm.runInContext(fs.readFileSync('OfferSignals.gs','utf8'),c);
  vm.runInContext(fs.readFileSync('ProductCardProbe.gs','utf8'),c);
  return c;
 }

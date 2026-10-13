@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const now='2026-10-13T12:00:00.000Z',url='https://www.satu.kz/p1';
-function harness(){const c=vm.createContext({Date,Map,Set});for(const f of ['SupplierIntake.gs','ProductCardProbe.gs','CardOfferEvidence.gs'])vm.runInContext(fs.readFileSync(f,'utf8'),c);return c;}
+function harness(){const c=vm.createContext({Date,Map,Set});for(const f of ['SupplierIntake.gs','OfferSignals.gs','ProductCardProbe.gs','CardOfferEvidence.gs'])vm.runInContext(fs.readFileSync(f,'utf8'),c);return c;}
 function fixture(){
  const shortlist={mode:'SAME_DAY_SELECTED_IDS_READ_ONLY',coverage:'sample_only',observedAt:now,items:[{lotId:'123',decision:'SAME_DAY_CANDIDATE',deadline:'2026-10-13T18:00:00.000Z',applicationStart:'2026-10-13T09:00:00.000Z',quantity:2,unit:'ea',sourceUrl:'https://old.goszakup.gov.kz/ru/subpriceoffer/index/456/123'}]};
  const requests=[{lotId:'123',url,provider:'SATU',origin:'KZ',expected:{brand:'CNP',model:'M1',partNumber:'P1'}}];
