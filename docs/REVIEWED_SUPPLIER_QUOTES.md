@@ -1,0 +1,7 @@
+# Issue #30 — Independent supplier quote verification bridge
+
+`finalizeTenderSupplierQuotes(shortlist,lot,observations,candidateReview,policy,nowIso)` joins current goods/lot context, an already reviewed exact manufacturer model and supplier offer observations (from `SupplierIntake.gs`) against an **independently reviewed** registry. Each approved artifact must bind lot/announcement/revision, supplier and group, brand/model/part number/unit, unit price/currency, available stock, lead time, Kazakhstan delivery, valid-until and exact PRICE/STOCK/DELIVERY source URL/SHA/page locator/observation time. Missing, duplicate, stale or contradictory approvals remain REVIEW. This module does not fetch sources or create approvals; independent source attestation is an external trust boundary.
+
+For non-KZT costs, foreign exchange and reviewed spread evidence are mandatory. One accepted quote is still not enough to win a tender: `evaluateTenderWithReviewedSuppliers` passes only reviewed quotes and manufacturer criterion assessments into the existing national/TS/three-independent-supplier/15-cost/tax/net-20%-margin engine. All GO results are conditional on reviewed inputs and a planned offer, not revenue guarantees.
+
+No network, Apps Script deployment, Sheets writes, trigger or paid service. Unit tests are synthetic and do **not** verify a real supplier. Source `CONFIRMED` is not inferred from search snippets, HTML JSON-LD, an arbitrary user boolean, or document URL alone. Live supplier registry capture and independent attestation remain separate.
