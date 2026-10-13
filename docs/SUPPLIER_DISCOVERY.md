@@ -1,0 +1,13 @@
+# PR #36 — supplier discovery via Brave Search API (opt-in only)
+
+\`planTenderSupplierDiscovery(shortlist,targets,policy,nowIso)\` generates up to **six** domain-restricted exact brand/model/part-number search queries from fresh \`SAME_DAY_CANDIDATE\` lots. It is offline and free; there is no fabricated product URL or price. Supported fixed domain/origin combinations include Kaspi KZ, Satu KZ, Ozon KZ/RU, Wildberries KZ/RU, Alibaba CN and 1688 CN. Manufacturer/distributor domains need exact owner-approved host entries.
+
+\`inspectTenderSupplierDiscovery\` uses the documented \`https://api.search.brave.com/res/v1/web/search\` GET API and \`X-Subscription-Token\`. **It has not been executed against Brave**. Execution requires **all**: a separately approved and deployed Apps Script version, the user-provided Brave subscription secret in \`BRAVE_SEARCH_API_KEY\` Script Properties, and trusted runtime policy \`approved=true\`, \`allowSearchApiCall=true\`, \`apiProvider='BRAVE_SEARCH'\`, \`billingApproved=true\`, \`maxApprovedRequests\` covering the specific bounded plan. No defaults implicitly approve paid calls.
+
+Every request shares the pilot rolling 24h attempt counter; maximum six requests, five URL results per query, 256 KiB per JSON response, 30-second soft runtime. No redirects, authentication to merchants, pagination, Google Sheet write, storage or automatic retry loop. A policy/source/request failure discards partial results and errors are scrubbed. Search queries accept only conservative alphanumerics and model punctuation, not raw search operators.
+
+Returned records are **links to investigate only**, with \`sourceType=SEARCH_RESULT_LINK\`, \`verification=PENDING_PRODUCT_CARD\`, \`supplierOffersVerified=0\`, \`offerPriceKzt=null\`, \`HOLD_NATIONAL\`, \`tsCompliance=UNVERIFIED\`. Search snippets cannot establish brand match, quoted price, 100% TS compliance, independent supplier, available stock, logistics to Kazakhstan or 20% net margin. Follow-up review of exact direct product pages can reuse PR #35 \`inspectTenderProductCards\` under separate authorization; it still does not create CONFIRMED quotes.
+
+The provider API search endpoint and entitlement must be checked at actual run time; no subscription, API key, merchant ToS approval or billable call has been granted or used. Without approved credentials, runtime refuses to send even one request. CI uses synthetic responses only and cannot certify real provider coverage, pricing or profitability.
+
+No Apps Script publication, triggers, Sheets write, paid OCR, automated bid, watermark advance or unauthorized spend.
