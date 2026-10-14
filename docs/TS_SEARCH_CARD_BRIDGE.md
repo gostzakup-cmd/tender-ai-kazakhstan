@@ -1,0 +1,3 @@
+# TS-first search result to product-card bridge
+
+`parseTenderTsSearchCardLeads` consumes offline, externally obtained web search responses for the TS search plan, ensures each response is bound to the intended query, and checks product URLs against fixed KZ/RU/CN merchant domain allowlists. It keeps all original TS search criteria alongside each lead. `planTenderTsCardFollowup` builds a bounded follow-up queue with `expected:null` because the model is unknown until the card is observed. Product leads remain UNREVIEWED and are never treated as 100% technical matches, supplier quotes, or stock. Certificates are excluded from discovery. This PR does not issue searches or HTTP requests, publish Apps Script, use paid APIs, or modify Sheets.
