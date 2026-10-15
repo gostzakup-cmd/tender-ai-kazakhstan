@@ -28,7 +28,7 @@ function planTenderPassportTsMappings(ocr,ts,requirements){
   const candidates=params.items.filter(x=>x.proposal&&x.proposal.parameterCode===req.parameterCode);
   out.items.push({criterionId:req.id,requirement:criterion.requirement,
    tsSha256:ts.evidence&&ts.evidence.sha256||null,
-   operator:req.operator,unit:req.unit,
+   parameterCode:req.parameterCode,operator:req.operator,unit:req.unit,
    target:req.value||null,minimum:req.minimum||null,maximum:req.maximum||null,
    manufacturerSha256:ocr.source.sha256,
    manufacturerUrl:ocr.source.url,
