@@ -1,0 +1,3 @@
+# Unknown-model product card discovery
+
+The existing exact-model probe requires a known brand/model/MPN. `inspectTenderUnknownModelCardHtml` enables offline parsing of product schema identity when only TS-parameter search results exist. `inspectTenderTsSearchCardResponses` binds each page's supplied HTML to the exact selected search hit and retains its full TS criteria. It never confirms a technical requirement, price, stock, offer, or certificate. This is a parser and adapter for caller-supplied HTML, **not a live search or network fetch**. There is no Apps Script deployment, Sheets write, paid call or production test.
