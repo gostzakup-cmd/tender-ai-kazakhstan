@@ -6,8 +6,10 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const SCRIPT_ID = '1_UmAJ7xfIks7b2Q_PjDt_xUoEzovUIh5V5e_leuiJW2O9MGA9maQGL-y';
-const FILES = ['Config.gs', 'Sheets.gs', 'Api.gs', 'V3.gs', 'Pilot.gs', 'Sync.gs', 'Diagnostics.gs', 'SelfTests.gs'];
 const ROOT = path.resolve(__dirname, '..');
+// Upload every root Apps Script module, not only the original eight MVP files.
+// The inventory/stage checks still preserve unrelated remote files and reject collisions.
+const FILES = fs.readdirSync(ROOT).filter(name => /^[A-Za-z][A-Za-z0-9_-]*\.gs$/.test(name)).sort();
 const IGNORE = '**/**\n!**/*.gs\n!**/*.js\n!**/*.html\n!appsscript.json\n';
 function check(condition, message) { if (!condition) throw new Error(message); }
 function json(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
