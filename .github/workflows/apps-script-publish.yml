@@ -58,7 +58,7 @@ jobs:
       - name: Validate dispatch and run local tests
         run: |
           node tools/actions-deploy.cjs guard "$TENDER_OPERATION"
-          node --test tests/core.test.cjs tests/upload.test.cjs tests/actions.test.cjs
+          node --test tests/*.test.cjs
       - name: Materialize temporary Google OAuth file
         env:
           CLASP_AUTH_JSON: ${{ secrets.CLASP_AUTH_JSON }}
@@ -118,7 +118,7 @@ jobs:
       - name: Validate dispatch and run local tests
         run: |
           node tools/actions-deploy.cjs guard "$TENDER_OPERATION"
-          node --test tests/core.test.cjs tests/upload.test.cjs tests/actions.test.cjs
+          node --test tests/*.test.cjs
       - name: Verify preparation run belongs to this workflow and commit
         id: reviewed
         env:
