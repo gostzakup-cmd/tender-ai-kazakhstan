@@ -5,7 +5,11 @@
  */
 function runTenderProductionSmokeTest(){
  const report=inspectTenderTodayMvp();
- return summarizeTenderProductionSmokeTest(report,new Date().toISOString());
+ const result=summarizeTenderProductionSmokeTest(report,new Date().toISOString());
+ // Log only bounded diagnostic counters; no raw HTML, credentials, or supplier data.
+ console.log('TENDER_SMOKE_RESULT: '+JSON.stringify(result));
+ console.log('TENDER_PORTAL_ISSUE: '+String(report&&report.issue||'NONE'));
+ return result;
 }
 function summarizeTenderProductionSmokeTest(report,at){
  const out={mode:'TENDER_PRODUCTION_SMOKE_TEST',observedAt:at,
