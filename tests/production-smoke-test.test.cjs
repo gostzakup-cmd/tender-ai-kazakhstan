@@ -22,3 +22,14 @@ test('run entry point delegates only to bounded existing collector',()=>{
  c.inspectTenderTodayMvp=()=>fixture();
  const result=c.runTenderProductionSmokeTest();assert.equal(result.status,'READ_ONLY_SAMPLE_COMPLETED');
 });
+
+test('entry point prints bounded report to log',()=>{
+ const lines=[];
+ c.console={log:(s)=>lines.push(s)};
+ c.inspectTenderTodayMvp=()=>fixture();
+ const result=c.runTenderProductionSmokeTest();
+ assert.equal(result.status,'READ_ONLY_SAMPLE_COMPLETED');
+ assert.equal(lines.length,2);
+ assert.match(lines[0],/^TENDER_SMOKE_RESULT: /);
+ assert.equal(lines[1],'TENDER_PORTAL_ISSUE: NONE');
+});
